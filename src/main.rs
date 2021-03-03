@@ -27,8 +27,8 @@ impl Analysis<Rise> for RiseAnalysis {
 
     fn merge(&self, to: &mut Data, from: Data) -> bool {
         let before_len = to.free.len();
-        //to.free.extend(from.free);
-        to.free.retain(|i| from.free.contains(i));
+        to.free.extend(from.free);
+        //to.free.retain(|i| from.free.contains(i));
         let did_change = before_len != to.free.len();
         did_change
     }
@@ -151,40 +151,49 @@ fn substitute_ident(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -> Id 
             Some(id) => id,
             None =>
                 if !env.egraph[eclass].data.free.contains(&env.var) {
-                    // println!("avoided");
                     eclass
                 } else {
                     let enodes = env.egraph[eclass].nodes.clone();
-                    // println!("enodes: {:?}", enodes);
                     // add a dummy node to avoid cycles
-                    let dummy = env.egraph.add(Rise::Symbol(format!("_{}_{}_{}", eclass, env.var, env.expr).into()));
+                    let dummy = env.egraph.add(Rise::Symbol(format!("_s_{}_{}_{}", eclass, env.var, env.expr).into()));
                     env.visited.insert(eclass, dummy);
                     let new_ids: Vec<_> = {
                         enodes.into_iter().map(|enode| {
                             match enode {
-                                Rise::Var(v) if v == env.var => Ok(env.expr),
-                                Rise::Var(_) => Err(enode),
-                                Rise::Symbol(_) => Err(enode),
+                                Rise::Var(v) if v == env.var => env.expr,
+                                // ignore dummies
+                                Rise::Symbol(s) if s.as_str().starts_with("_") => dummy,
+                                Rise::Var(_) | Rise::Symbol(_) => {
+                                    panic!("{:?}", enode);
+                                    // keeping same e-node would merge the new class with previous class
+                                }
                                 Rise::Lambda([v, e]) =>
-                                    if env.egraph[env.expr].data.free.contains(&v) {
-                                        panic!("TODO: capture avoid")
+                                    if v == env.var {
+                                        panic!("{:?}", v)
+                                        // keeping same e-node would merge the new class with previous class
+                                    } else if env.egraph[env.expr].data.free.contains(&v) {
+                                        env.egraph.rebuild();
+                                        env.egraph.dot().to_svg("/tmp/cap-avoid.svg").unwrap();
+                                        panic!("FIXME: capture avoid {:?} {:?}", env.egraph[v], env.egraph[env.var]);
+                                        let v2 = env.egraph.add(
+                                            Rise::Symbol(format!("subs_{}_{}_{}", eclass, env.var, env.expr).into()));
+                                        println!("capture avoid {}, {}, {}, {}, {}, {}", eclass, v2, v, e, env.var, env.expr);
+                                        let e2 = replace_ident(env.egraph, v, v2, e);
+                                        let r = Rise::Lambda([v2, rec_class(e2, env)]);
+                                        env.egraph.add(r)
                                     } else {
-                                        Err(Rise::Lambda([v, rec_class(e, env)]))
+                                        let r = Rise::Lambda([v, rec_class(e, env)]);
+                                        env.egraph.add(r)
                                     },
-                                Rise::App([f, e]) =>
-                                    Err(Rise::App([rec_class(f, env), rec_class(e, env)])),
+                                Rise::App([f, e]) => {
+                                    let r = Rise::App([rec_class(f, env), rec_class(e, env)]);
+                                    env.egraph.add(r)
+                                }
                                 _ => panic!("did not expect {:?}", enode)
                             }
                         }).collect()
                     };
-                    let new_ids = new_ids.into_iter().map(|x| {
-                        match x {
-                            Ok(id) => id,
-                            Err(enode) => env.egraph.add(enode),
-                        }
-                    }).collect::<Vec<_>>().into_iter();
-                    let result = new_ids.fold(dummy, |a, b| {
-                        // println!("union: {:?} + {:?}", env.egraph[a].nodes, env.egraph[b].nodes);
+                    let result = new_ids.into_iter().fold(dummy, |a, b| {
                         let (id, _) = env.egraph.union(a, b);
                         id
                     });
@@ -196,6 +205,46 @@ fn substitute_ident(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -> Id 
 
     let visited = HashMap::new();
     rec_class(body, &mut Env { egraph, var, expr, visited })
+}
+
+// returns a new body where var is replaced by expr
+fn replace_ident(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id {
+    struct Env<'a> {
+        egraph: &'a mut RiseEGraph,
+        var: Id,
+        new_var: Id,
+        visited: HashMap<Id, Id>
+    }
+
+    fn rec_class(eclass: Id, env: &mut Env) -> Id {
+        match env.visited.get(&eclass).map(|id| *id) {
+            Some(id) => id,
+            None =>
+                if eclass == env.var {
+                    env.new_var
+                } else {
+                    let enodes = env.egraph[eclass].nodes.clone();
+                    // add a dummy node to avoid cycles
+                    let dummy = env.egraph.add(Rise::Symbol(format!("_r_{}_{}_{}", eclass, env.var, env.new_var).into()));
+                    env.visited.insert(eclass, dummy);
+                    let new_ids: Vec<_> = {
+                        enodes.into_iter().map(|enode| {
+                            let r = enode.map_children(|c| rec_class(c, env));
+                            env.egraph.add(r)
+                        }).collect()
+                    };
+                    let result = new_ids.into_iter().fold(dummy, |a, b| {
+                        let (id, _) = env.egraph.union(a, b);
+                        id
+                    });
+                    env.visited.insert(eclass, result);
+                    result
+                }
+        }
+    }
+
+    let visited = HashMap::new();
+    rec_class(body, &mut Env { egraph, var, new_var, visited })
 }
 
 fn with_fresh_var(name: &str, pattern: &str) -> MakeFresh {
@@ -315,8 +364,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
     ]);
     let runner = Runner::default().with_expr(&goal).run(&norm_rules);
     let (egraph, root) = (runner.egraph, runner.roots[0]);
-    egraph.dot().to_svg("/tmp/goal.svg").unwrap();
-    struct RiseAstSize; // FIXME: this extracts invalid programs ..
+    struct RiseAstSize;
     impl CostFunction<Rise> for RiseAstSize {
         type Cost = usize;
         fn cost<C>(&mut self, enode: &Rise, mut costs: C) -> Self::Cost
@@ -346,7 +394,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
 
     let goals2 = goals.clone();
     runner = runner
-        .with_node_limit(10_000)
+        .with_node_limit(40_000)
         .with_iter_limit(20)
         .with_time_limit(std::time::Duration::from_secs(60))
         .with_hook(move |r| {
@@ -357,7 +405,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
             }
         }).run(&rules_to_goal);
     runner.print_report();
-    runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
+    // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
     runner.egraph.check_goals(id, &goals);
 }
 
@@ -382,18 +430,68 @@ fn main() {
     prove_equiv("simple map fission", fused.clone(), fissioned, fission_fusion_rules);
     prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules);
 
-/*
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
     let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
     let dot = tmp.as_str();
     let tmp = format!("(lam c (lam d {}))", "(app (app zip (var c)) (var d))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
     let dot2 = tmp.as_str();
-    let base = /*slide2d_3_1.then(*/format!(
-        /*"(app map (app map */"(lam nbh (app (app {} (app join weights2d)) (app join (var nbh))))"/*))"*/, dot)/*)*/;
-    let factorised = /*slide2d_3_1.then(*//*format!(
-        "(app map (app map {}))", */format!("(app {} weightsH)", dot).then(format!("(app {} weightsV)", dot))
-    /*)*//*)*/;
-    prove_equiv("base to factorised", base, factorised);
-    */
+    let base = slide2d_3_1.then(format!(
+        "(app map (app map (lam nbh (app (app {} (app join weights2d)) (app join (var nbh))))))", dot));
+    let factorised = slide2d_3_1.then(format!(
+        "(app map (app map {}))", format!("(app map (app {} weightsH))", dot).then(format!("(app {} weightsV)", dot2))
+    ));
+    let factorised2 = slide2d_3_1.then(format!(
+        "(app map (app map {}))", "transpose".then(format!("(app map (app {} weightsV))", dot)).then(format!("(app {} weightsH)", dot2))
+    ));
+    let scanline = "(app (app slide 3) 1)".then(format!(
+        "(app map {})",
+            "transpose".then(
+            format!("(app map (app {} weightsV))", dot)).then(
+            "(app (app slide 3) 1)").then(
+            format!("(app map (app {} weightsH))", dot2))
+    ));
+    prove_equiv("base to factorised", base.clone(), factorised,
+                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    prove_equiv("base to factorised2", base.clone(), factorised2,
+                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    let scanline_half_0 = "(app (app slide 3) 1)".then(format!(
+        "(app map {})",
+            "transpose".then(
+            "(app (app slide 3) 1)").then(
+            "(app map transpose)").then(format!(
+                "(app map {})",
+                    "transpose".then(
+                    format!("(app map (app {} weightsV))", dot)).then(
+                    format!("(app {} weightsH)", dot2))))
+    ));
+    prove_equiv("base to scanline half 0", base.clone(), scanline_half_0.clone(), &[
+        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+
+    let scanline_half = "(app (app slide 3) 1)".then(format!(
+        "(app map {})",
+            "transpose".then(
+            "(app (app slide 3) 1)").then(format!(
+            "(app map {})",
+                "transpose".then("transpose").then(
+                format!("(app map (app {} weightsV))", dot)).then(
+                format!("(app {} weightsH)", dot2))))
+    ));
+    prove_equiv("h0 to h", scanline_half_0, scanline_half.clone(), &[
+        "beta", "remove-transpose-pair", "map-fusion", // "map-fission", "eta"
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    //FIXME:
+    prove_equiv("base to scanline half", base.clone(), scanline_half, &[
+        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+
+    // FIXME:
+    prove_equiv("base to scanline", base, scanline, &[
+        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
 }
