@@ -76,6 +76,7 @@ fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
             "(app map (lam ?x (app ?f ?gx)))" =>
             { with_fresh_var("?mfi", "(lam ?mfi (app (app map ?f) (app (app map (lam ?x ?gx)) (var ?mfi))))") }
             if neg(contains_ident(var("?f"), var("?x")))),
+        // TODO: if conditions should be recursive filters?
 
         // reductions
         rewrite!("eta"; "(lam ?v (app ?f (var ?v)))" => "?f"
@@ -133,7 +134,7 @@ impl Applier<Rise, RiseAnalysis> for BetaApplier {
     fn apply_one(&self, egraph: &mut RiseEGraph, eclass: Id, subst: &Subst) -> Vec<Id> {
         let new_id = substitute_ident(
             egraph, subst[self.v], subst[self.e], subst[self.body]);
-        vec![eclass, new_id]
+        vec![new_id]
     }
 }
 
@@ -157,54 +158,55 @@ fn substitute_ident(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -> Id 
                     // add a dummy node to avoid cycles
                     let dummy = env.egraph.add(Rise::Symbol(format!("_s_{}_{}_{}", eclass, env.var, env.expr).into()));
                     env.visited.insert(eclass, dummy);
-                    let new_ids: Vec<_> = {
-                        enodes.into_iter().map(|enode| {
-                            match enode {
-                                Rise::Var(v) if v == env.var => env.expr,
-                                // ignore dummies
-                                Rise::Symbol(s) if s.as_str().starts_with("_") => dummy,
-                                Rise::Var(_) | Rise::Symbol(_) => {
-                                    panic!("{:?}", enode);
-                                    // keeping same e-node would merge the new class with previous class
-                                }
-                                Rise::Lambda([v, e]) =>
-                                    if v == env.var {
-                                        panic!("{:?}", v)
-                                        // keeping same e-node would merge the new class with previous class
-                                    } else if env.egraph[env.expr].data.free.contains(&v) {
-                                        env.egraph.rebuild();
-                                        env.egraph.dot().to_svg("/tmp/cap-avoid.svg").unwrap();
-                                        panic!("FIXME: capture avoid {:?} {:?}", env.egraph[v], env.egraph[env.var]);
-                                        let v2 = env.egraph.add(
-                                            Rise::Symbol(format!("subs_{}_{}_{}", eclass, env.var, env.expr).into()));
-                                        println!("capture avoid {}, {}, {}, {}, {}, {}", eclass, v2, v, e, env.var, env.expr);
-                                        let e2 = replace_ident(env.egraph, v, v2, e);
-                                        let r = Rise::Lambda([v2, rec_class(e2, env)]);
-                                        env.egraph.add(r)
-                                    } else {
-                                        let r = Rise::Lambda([v, rec_class(e, env)]);
-                                        env.egraph.add(r)
-                                    },
-                                Rise::App([f, e]) => {
-                                    let r = Rise::App([rec_class(f, env), rec_class(e, env)]);
-                                    env.egraph.add(r)
-                                }
-                                _ => panic!("did not expect {:?}", enode)
+                    let final_id = enodes.into_iter().fold(dummy, |current_id, enode| {
+                        let new_id = match enode {
+                            Rise::Var(v) if v == env.var => env.expr,
+                            // ignore dummies
+                            Rise::Symbol(s) if s.as_str().starts_with("_") => dummy,
+                            Rise::Var(_) | Rise::Symbol(_) => {
+                                panic!("{:?}", enode);
+                                // keeping same e-node would merge the new class with previous class
                             }
-                        }).collect()
-                    };
-                    let result = new_ids.into_iter().fold(dummy, |a, b| {
-                        let (id, _) = env.egraph.union(a, b);
-                        id
+                            Rise::Lambda([v, e]) =>
+                                if v == env.var {
+                                    panic!("{:?}", v)
+                                    // keeping same e-node would merge the new class with previous class
+                                } else if env.egraph[env.expr].data.free.contains(&v) {
+                                    env.egraph.rebuild();
+                                    env.egraph.dot().to_svg("/tmp/cap-avoid.svg").unwrap();
+                                    panic!("FIXME: capture avoid {:?} {:?}", env.egraph[v], env.egraph[env.var]);
+                                    let v2 = env.egraph.add(
+                                        Rise::Symbol(format!("subs_{}_{}_{}", eclass, env.var, env.expr).into()));
+                                    println!("capture avoid {}, {}, {}, {}, {}, {}", eclass, v2, v, e, env.var, env.expr);
+                                    let e2 = replace_ident(env.egraph, v, v2, e);
+                                    let r = Rise::Lambda([v2, rec_class(e2, env)]);
+                                    env.egraph.add(r)
+                                } else {
+                                    let r = Rise::Lambda([v, rec_class(e, env)]);
+                                    env.egraph.add(r)
+                                },
+                            Rise::App([f, e]) => {
+                                let r = Rise::App([rec_class(f, env), rec_class(e, env)]);
+                                env.egraph.add(r)
+                            }
+                            _ => panic!("did not expect {:?}", enode)
+                        };
+                        let (new_id, _) = env.egraph.union(current_id, new_id);
+                        new_id
                     });
-                    env.visited.insert(eclass, result);
-                    result
+                    env.visited.insert(eclass, final_id);
+                    final_id
                 }
         }
     }
 
     let visited = HashMap::new();
-    rec_class(body, &mut Env { egraph, var, expr, visited })
+    // egraph.rebuild();
+    // egraph.dot().to_svg(format!("/tmp/before_{}_{}_{}.svg", var, expr, body)).unwrap();
+    let r = rec_class(body, &mut Env { egraph, var, expr, visited });
+    // egraph.rebuild();
+    // egraph.dot().to_svg(format!("/tmp/after_{}_{}_{}.svg", var, expr, body)).unwrap();
+    r
 }
 
 // returns a new body where var is replaced by expr
@@ -227,18 +229,15 @@ fn replace_ident(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id 
                     // add a dummy node to avoid cycles
                     let dummy = env.egraph.add(Rise::Symbol(format!("_r_{}_{}_{}", eclass, env.var, env.new_var).into()));
                     env.visited.insert(eclass, dummy);
-                    let new_ids: Vec<_> = {
-                        enodes.into_iter().map(|enode| {
-                            let r = enode.map_children(|c| rec_class(c, env));
-                            env.egraph.add(r)
-                        }).collect()
-                    };
-                    let result = new_ids.into_iter().fold(dummy, |a, b| {
-                        let (id, _) = env.egraph.union(a, b);
-                        id
-                    });
-                    env.visited.insert(eclass, result);
-                    result
+                    let final_id =
+                        enodes.into_iter().fold(dummy, |current_id, enode| {
+                            let new_enode = enode.map_children(|c| rec_class(c, env));
+                            let new_id = env.egraph.add(new_enode);
+                            let (new_id, _) = env.egraph.union(current_id, new_id);
+                            new_id
+                        });
+                    env.visited.insert(eclass, final_id);
+                    final_id
                 }
         }
     }
@@ -409,7 +408,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
     runner.egraph.check_goals(id, &goals);
 }
 
-fn main() {
+fn main() {/*
     let e =
         "(app map (app (app padClamp 1) 1))".then(
         "(app (app padClamp 1) 1)".then(
@@ -429,7 +428,7 @@ fn main() {
     prove_equiv("simple map fusion", fissioned.clone(), half_fused.clone(), fission_fusion_rules);
     prove_equiv("simple map fission", fused.clone(), fissioned, fission_fusion_rules);
     prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules);
-
+*/
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
     let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
@@ -450,26 +449,12 @@ fn main() {
             format!("(app map (app {} weightsV))", dot)).then(
             "(app (app slide 3) 1)").then(
             format!("(app map (app {} weightsH))", dot2))
-    ));
+    ));/*
     prove_equiv("base to factorised", base.clone(), factorised,
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
     prove_equiv("base to factorised2", base.clone(), factorised2,
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    let scanline_half_0 = "(app (app slide 3) 1)".then(format!(
-        "(app map {})",
-            "transpose".then(
-            "(app (app slide 3) 1)").then(
-            "(app map transpose)").then(format!(
-                "(app map {})",
-                    "transpose".then(
-                    format!("(app map (app {} weightsV))", dot)).then(
-                    format!("(app {} weightsH)", dot2))))
-    ));
-    prove_equiv("base to scanline half 0", base.clone(), scanline_half_0.clone(), &[
-        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
-        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
-        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-
+*/
     let scanline_half = "(app (app slide 3) 1)".then(format!(
         "(app map {})",
             "transpose".then(
@@ -479,15 +464,12 @@ fn main() {
                 format!("(app map (app {} weightsV))", dot)).then(
                 format!("(app {} weightsH)", dot2))))
     ));
-    prove_equiv("h0 to h", scanline_half_0, scanline_half.clone(), &[
-        "beta", "remove-transpose-pair", "map-fusion", // "map-fission", "eta"
-        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
-        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    //FIXME:
+    // FIXME: equivalence not proven when adding unused map fission rule
     prove_equiv("base to scanline half", base.clone(), scanline_half, &[
-        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion",/* "map-fission",*/
         "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
         "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    // beta impl issue?
 
     // FIXME:
     prove_equiv("base to scanline", base, scanline, &[
