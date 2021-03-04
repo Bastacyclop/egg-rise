@@ -312,42 +312,83 @@ impl DSL for &str {
 }
 
 fn expr_to_alpha_equiv_pattern(e: RecExpr<Rise>) -> Pattern<Rise> {
-    let original_vec = e.as_ref();
-    let mut pattern_vec = Vec::new();
-    pattern_vec.extend(original_vec.iter().cloned().map(ENodeOrVar::ENode));
+    use std::str::FromStr;
 
-    let mut sym_map = HashMap::new();
-    fn rec(index: usize, original_vec: &[Rise], pattern_vec: &mut [ENodeOrVar<Rise>], sym_map: &mut HashMap<Symbol, Symbol>) {
-        match original_vec[index] {
-            Rise::Var(id) => rec(id.into(), original_vec, pattern_vec, sym_map),
+    println!("{}", e);
+    let p = Pattern::<Rise>::from(
+        expr_alpha_rename(e, ENodeOrVar::ENode,
+                          |s| {
+                              let s2 = format!("?{}", s.as_str());
+                              ENodeOrVar::Var(Var::from_str(s2.as_str()).unwrap())
+                          },
+                          |s| {
+                              ENodeOrVar::ENode(Rise::Symbol(s))
+                          }));
+    println!("{}", p);
+    p
+}
+
+fn expr_fresh_alpha_rename(e: RecExpr<Rise>) -> RecExpr<Rise> {
+    expr_alpha_rename(e, |r| r,
+                      |s| {
+                          let s2 = format!("x{}", fresh_id());
+                          Rise::Symbol(s2.into())
+                      },
+                      |s| Rise::Symbol(s))
+}
+
+fn expr_alpha_rename<L, BS, FS>(e: RecExpr<Rise>,
+                                init: impl Fn(Rise) -> L,
+                                bound_symbol: BS,
+                                free_symbol: FS) -> RecExpr<L>
+    where L: Language, BS: Fn(Symbol) -> L, FS: Fn(Symbol) -> L
+{
+    let original_vec = e.as_ref();
+    let mut new_vec = Vec::new();
+    new_vec.extend(original_vec.iter().cloned().map(init));
+
+    struct Env<'a, L, BS, FS> {
+        original_vec: &'a [Rise],
+        new_vec: &'a mut [L],
+        sym_map: &'a mut HashMap<Symbol, L>,
+        bound_symbol: BS,
+        free_symbol: FS,
+    };
+    fn rec<L, BS, FS>(index: usize, env: &mut Env<L, BS, FS>)
+        where L: Language, BS: Fn(Symbol) -> L, FS: Fn(Symbol) -> L
+    {
+        match env.original_vec[index] {
+            Rise::Var(id) => rec(id.into(), env),
             Rise::App([f, e]) => {
-                rec(f.into(), original_vec, pattern_vec, sym_map);
-                rec(e.into(), original_vec, pattern_vec, sym_map);
+                rec(f.into(), env);
+                rec(e.into(), env);
             }
             Rise::Lambda([x, e]) => {
-                let s = match original_vec[usize::from(x)] {
+                let s = match env.original_vec[usize::from(x)] {
                     Rise::Symbol(s) => s,
                     _ => panic!("expected symbol for lambda")
                 };
-                sym_map.insert(s, format!("?{}", s.as_str()).into()).is_none() || panic!("symbol duplicate");
-                rec(x.into(), original_vec, pattern_vec, sym_map);
-                rec(e.into(), original_vec, pattern_vec, sym_map);
+                if env.sym_map.insert(s, (env.bound_symbol)(s)).is_some() {
+                    panic!("symbol duplicate");
+                }
+                rec(x.into(), env);
+                rec(e.into(), env);
             }
             Rise::Symbol(sym) => {
-                use std::str::FromStr;
-                pattern_vec[index] = sym_map.get(&sym).cloned().map(|s| ENodeOrVar::Var(Var::from_str(s.as_str()).unwrap()))
-                    .unwrap_or(ENodeOrVar::ENode(Rise::Symbol(sym)));
+                env.new_vec[index] = env.sym_map.get(&sym).cloned().unwrap_or_else(|| (env.free_symbol)(sym));
             }
             Rise::Number(_) => ()
         }
     }
 
-    rec(original_vec.len() - 1, original_vec, &mut pattern_vec[..], &mut sym_map);
-    println!("{}", e);
-    let p: RecExpr<ENodeOrVar<_>> = pattern_vec.into();
-    let p = p.into();
-    println!("{}", p);
-    p
+    rec(original_vec.len() - 1, &mut Env {
+        original_vec,
+        new_vec: &mut new_vec[..],
+        sym_map: &mut HashMap::new(),
+        bound_symbol,
+        free_symbol
+    });
+    new_vec.into()
 }
 
 fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str]) {
@@ -429,18 +470,18 @@ fn main() {/*
     prove_equiv("simple map fission", fused.clone(), fissioned, fission_fusion_rules);
     prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules);
 */
+
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
     let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
     let dot = tmp.as_str();
-    let tmp = format!("(lam c (lam d {}))", "(app (app zip (var c)) (var d))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
-    let dot2 = tmp.as_str();
+    let dot2: String = format!("{}", expr_fresh_alpha_rename(dot.parse().unwrap()));
     let base = slide2d_3_1.then(format!(
         "(app map (app map (lam nbh (app (app {} (app join weights2d)) (app join (var nbh))))))", dot));
     let factorised = slide2d_3_1.then(format!(
         "(app map (app map {}))", format!("(app map (app {} weightsH))", dot).then(format!("(app {} weightsV)", dot2))
     ));
-    let factorised2 = slide2d_3_1.then(format!(
+    let factorisedVH = slide2d_3_1.then(format!(
         "(app map (app map {}))", "transpose".then(format!("(app map (app {} weightsV))", dot)).then(format!("(app {} weightsH)", dot2))
     ));
     let scanline = "(app (app slide 3) 1)".then(format!(
@@ -449,12 +490,19 @@ fn main() {/*
             format!("(app map (app {} weightsV))", dot)).then(
             "(app (app slide 3) 1)").then(
             format!("(app map (app {} weightsH))", dot2))
-    ));/*
+    ));
+    let separated = "(app (app slide 3) 1)".then(
+        format!("(app map {})", "transpose".then(format!("(app map (app {} weightsV))", dot)))).then(
+        format!("(app map {})", "(app (app slide 3) 1)".then(format!("(app map (app {} weightsH))", dot2)))
+    );
+
     prove_equiv("base to factorised", base.clone(), factorised,
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    prove_equiv("base to factorised2", base.clone(), factorised2,
+    prove_equiv("base to factorisedVH", base.clone(), factorisedVH,
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-*/
+    prove_equiv("scanline to separated", scanline.clone(), separated,
+                &["eta", "beta", "map-fission", "map-fusion"]);
+
     let scanline_half = "(app (app slide 3) 1)".then(format!(
         "(app map {})",
             "transpose".then(
