@@ -142,7 +142,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
     println!("starting from {}", start);
 
     let norm_rules = rules(&[
-        "eta", "beta"
+        /*"eta", */"beta"
     ]);
     let runner = Runner::default().with_expr(&goal).run(&norm_rules);
     let (egraph, root) = (runner.egraph, runner.roots[0]);
@@ -176,7 +176,7 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
 
     let goals2 = goals.clone();
     runner = runner
-        .with_node_limit(40_000)
+        .with_node_limit(100_000)
         .with_iter_limit(20)
         .with_time_limit(std::time::Duration::from_secs(60))
         .with_hook(move |r| {
@@ -187,11 +187,11 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
             }
         }).run(&rules_to_goal);
     runner.print_report();
-    runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
+    // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
     runner.egraph.check_goals(id, &goals);
 }
 
-fn main() {
+fn main() {/*
     let e =
         "(app map (app (app padClamp 1) 1))".then(
         "(app (app padClamp 1) 1)".then(
@@ -220,7 +220,7 @@ fn main() {
     let then_fused = "(app map (>> (var f1) (>> (var f2) (>> (var f3) (var f4)))))".into();
     prove_equiv("then map fission + map fusion", then_fused, then_half_fused,
                 &["map-fusion-then", "map-fission-then", "then-assoc-1", "then-assoc-2"]);
-
+*/
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
     let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
@@ -253,7 +253,32 @@ fn main() {
     prove_equiv("scanline to separated", scanline.clone(), separated,
                 &["eta", "beta", "map-fission", "map-fusion"]);
 
-    let scanline_half = "(app (app slide 3) 1)".then(format!(
+    let scanline_s1 = "(app map (app (app slide 3) 1))".then(
+        "(app (app slide 3) 1)").then(
+        "(app map transpose)").then(format!(
+            "(app map (app map {}))",
+            "transpose".then(
+            format!("(app map (app {} weightsV))", dot)).then(
+            format!("(app {} weightsH)", dot2))
+    ));
+    let scanline_s2 = "(app (app slide 3) 1)".then(
+        "(app map (app map (app (app slide 3) 1)))").then(
+        "(app map transpose)").then(format!(
+        "(app map (app map {}))",
+        "transpose".then(
+            format!("(app map (app {} weightsV))", dot)).then(
+            format!("(app {} weightsH)", dot2))
+    ));
+    let scanline_s5= "(app (app slide 3) 1)".then(format!(
+        "(app map {})",
+        "(app map (app (app slide 3) 1))".then(
+        "transpose").then(format!(
+            "(app map {})",
+            "transpose".then(
+            format!("(app map (app {} weightsV))", dot)).then(
+            format!("(app {} weightsH)", dot2))))
+    ));
+    let scanline_s6= "(app (app slide 3) 1)".then(format!(
         "(app map {})",
             "transpose".then(
             "(app (app slide 3) 1)").then(format!(
@@ -263,14 +288,38 @@ fn main() {
                 format!("(app {} weightsH)", dot2))))
     ));
 
-    // FIXME: equivalence not proven when adding unused map fission rule
-    prove_equiv("base to scanline half", base.clone(), scanline_half, &[
+    prove_equiv("base to scanline s1", base.clone(), scanline_s1.clone(), &[
         /*"eta", */"beta", "remove-transpose-pair", "map-fusion", "map-fission",
         "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
         "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    // beta impl issue?
+    prove_equiv("base to scanline s2", base.clone(), scanline_s2.clone(), &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    prove_equiv("base to scanline s5", base.clone(), scanline_s5.clone(), &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    prove_equiv("scanline s5 to scanline s6", scanline_s5, scanline_s6.clone(), &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
 
-    // FIXME:
+    // FIXME: equivalence not proven when adding unused map fission rule
+    prove_equiv("scanline s2 to scanline s6", scanline_s2, scanline_s6.clone(), &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", //"map-fission", NodeLimit
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    prove_equiv("scanline s1 to scanline s6", scanline_s1, scanline_s6.clone(), &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", //"map-fission", IterationLimit
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+    prove_equiv("base to scanline s6", base.clone(), scanline_s6, &[
+        /*"eta", */"beta", "remove-transpose-pair", "map-fusion", //"map-fission", IterationLimit
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+
+    // FIXME: IterationLimit
     prove_equiv("base to scanline", base, scanline, &[
         "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
         "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
