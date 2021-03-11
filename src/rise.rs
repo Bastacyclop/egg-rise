@@ -59,7 +59,14 @@ impl Analysis<Rise> for RiseAnalysis {
                 enode.for_each(|c| extend(&mut free, &c));
             }
         }
-        let beta_extract = enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref());
+        let mut empty = enode.any(|id| {
+            egraph[id].data.beta_extract.as_ref().is_empty()
+        });
+        let beta_extract = if empty {
+            vec![].into()
+        } else {
+            enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref())
+        };
         Data { free, beta_extract }
     }
 }

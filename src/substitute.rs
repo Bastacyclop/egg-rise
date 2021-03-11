@@ -2,6 +2,15 @@ use egg::*;
 use crate::rise::*;
 use std::collections::HashMap;
 
+pub fn expr_contains(e: &[Rise], var: Symbol) -> bool {
+    for node in e {
+        if node == &Rise::Symbol(var) {
+            return true
+        }
+    }
+    false
+}
+
 pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) -> RecExpr<Rise> {
     struct Env<'a> {
         var: Symbol,
@@ -13,15 +22,6 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
     fn add_expr(to: &mut RecExpr<Rise>, e: &[Rise], id: Id) -> Id {
         let node = e[usize::from(id)].clone().map_children(|id| add_expr(to, e, id));
         to.add(node)
-    }
-
-    fn expr_contains(e: &[Rise], var: Symbol) -> bool {
-        for node in e {
-            if node == &Rise::Symbol(var) {
-                return true
-            }
-        }
-        false
     }
 
     fn find_fresh_symbol(a: &[Rise], b: &[Rise]) -> Symbol {
@@ -37,9 +37,10 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
     fn replace_expr(e: &[Rise], id: Id, v: Symbol, v2: Symbol) -> RecExpr<Rise> {
         fn replace_add(to: &mut RecExpr<Rise>, e: &[Rise], id: Id, v: Symbol, v2: Symbol) -> Id {
             let node = e[usize::from(id)].clone();
-            let result = match node {
-                Rise::Symbol(v) => Rise::Symbol(v2),
-                _ => node.map_children(|id| replace_add(to, e, id, v, v2))
+            let result = if node == Rise::Symbol(v) {
+                Rise::Symbol(v2)
+            } else {
+                node.map_children(|id| replace_add(to, e, id, v, v2))
             };
             to.add(result)
         }
@@ -79,7 +80,7 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
             &Rise::Lambda([v, e]) => {
                 let v2 = rec(usize::from(v), env);
                 let e2 = rec(usize::from(e), env);
-                env.result.add(Rise::Lambda([v, e2]))
+                env.result.add(Rise::Lambda([v2, e2]))
             }
             &Rise::App([f, e]) => {
                 let f2 = rec(usize::from(f), env);

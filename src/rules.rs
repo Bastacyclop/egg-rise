@@ -24,8 +24,8 @@ pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
         rewrite!("map-fission";
             "(app map (lam ?x (app ?f ?gx)))" =>
             { with_fresh_var("?mfi", "(lam ?mfi (app (app map ?f) (app (app map (lam ?x ?gx)) (var ?mfi))))") }
+            // TODO: if conditions should be recursive filters?
             if neg(contains_ident(var("?f"), var("?x")))),
-        // TODO: if conditions should be recursive filters?
 
         rewrite!("map-fusion-then";
             "(>> (app map ?f) (app map ?g))" => "(app map (>> ?f ?g))"),
@@ -36,6 +36,7 @@ pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
 
         // reductions
         rewrite!("eta"; "(lam ?v (app ?f (var ?v)))" => "?f"
+            // TODO: if conditions should be recursive filters?
             if neg(contains_ident(var("?f"), var("?v")))),
         rewrite!("beta"; "(app (lam ?v ?body) ?e)" =>
             //{ BetaApplier { v: var("?v"), e: var("?e"), body: var("?body") } }),
@@ -107,15 +108,15 @@ impl Applier<Rise, RiseAnalysis> for BetaExtractApplier {
         let ex_e = &egraph[subst[self.e]].data.beta_extract;
         let v_sym = {
             let ns = &egraph[subst[self.v]].nodes;
-            assert!(ns.len() == 1);
+            if ns.len() != 1 {
+                panic!("expected symbol, found {:?}", ns);
+            }
             match &ns[0] {
                 &Rise::Symbol(sym) => sym,
                 n => panic!("expected symbol, found {:?}", n)
             }
         };
-        // println!("before subs: {} [{} / {}]", ex_body, ex_e, v_sym);
         let result = substitute_expr(v_sym, ex_e, ex_body);
-        // println!("after subs:  {}", result);
         vec![egraph.add_expr(&result)]
     }
 }
