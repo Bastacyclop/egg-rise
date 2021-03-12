@@ -59,7 +59,7 @@ impl Analysis<Rise> for RiseAnalysis {
                 enode.for_each(|c| extend(&mut free, &c));
             }
         }
-        let mut empty = enode.any(|id| {
+        let empty = enode.any(|id| {
             egraph[id].data.beta_extract.as_ref().is_empty()
         });
         let beta_extract = if empty {
@@ -68,5 +68,12 @@ impl Analysis<Rise> for RiseAnalysis {
             enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref())
         };
         Data { free, beta_extract }
+    }
+}
+
+pub fn unwrap_symbol(n: &Rise) -> Symbol {
+    match n {
+        &Rise::Symbol(s) => s,
+        _ => panic!("expected symbol")
     }
 }

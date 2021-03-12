@@ -49,13 +49,6 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
         result
     }
 
-    fn unwrap_symbol(n: &Rise) -> Symbol {
-        match n {
-            &Rise::Symbol(s) => s,
-            _ => panic!("expected symbol")
-        }
-    }
-
     fn rec(index: usize, env: &mut Env) -> Id {
         match &env.body[index] {
             &Rise::Var(v) if env.body[usize::from(v)] == Rise::Symbol(env.var) =>
