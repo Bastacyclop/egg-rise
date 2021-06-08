@@ -68,12 +68,14 @@ pub fn dbrules(names: &[&str]) -> Vec<Rewrite<DBRise, DBRiseAnalysis>> {
             "(app (app slide ?sz) 1)" => "(app rotateValues ?sz)"),
 
         // domain-specific
+
+        // mulT = (lam (app (app mul (app fst %0)) (app snd %0)))
         rewrite!("separate-dot-hv-simplified";
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsV) (app (app map (lam (app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsH) %0))))) ?nbh))))"),
+            "(app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
+            "(app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip weightsV) (app (app map (lam (app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip weightsH) %0))))) ?nbh))))"),
         rewrite!("separate-dot-vh-simplified";
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsH) (app (app map (lam (app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsV) %0))))) (app transpose ?nbh)))))"),
+            "(app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
+            "(app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip weightsH) (app (app map (lam (app (app (app reduce add) 0) (app (app map (lam (app (app mul (app fst %0)) (app snd %0)))) (app (app zip weightsV) %0))))) (app transpose ?nbh)))))"),
     ];
     let mut map: HashMap<String, _> = all.into_iter().map(|r| (r.name().to_owned(), r)).collect();
     names.into_iter().map(|&n| map.remove(n).expect("rule not found")).collect()

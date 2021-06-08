@@ -196,9 +196,10 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
         .with_scheduler(SimpleScheduler)
         //.with_scheduler(Scheduler::default())
         .with_node_limit(1_000_000)
-        .with_iter_limit(20)
+        .with_iter_limit(30)
         .with_time_limit(std::time::Duration::from_secs(600)) // 10mn
         .with_hook(move |r| {
+            //r.egraph.dot().to_svg(format!("/tmp/egg{}.svg", r.iterations.len())).unwrap();
             if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
                 Err("Done".into())
             } else {
@@ -206,7 +207,7 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
             }
         }).run(&rules_to_goal);
     runner.print_report();
-    // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
+    runner.iterations.iter().for_each(|i| println!("{:?}", i));
     runner.egraph.check_goals(id, &goals);
 }
 
@@ -235,19 +236,20 @@ fn main() {/*
                    "(lam (app %1 %0))".into(), "%0".into(), &[]);
 
     let fission_fusion_rules = &["eta", "beta", "map-fusion", "map-fission"];
+
     prove_equiv("map first fission",
         format!("(app map {})", "f1".then("f2").then("f3").then("f4").then("f5")),
         "(app map f1)".then(format!("(app map {})", "f2".then("f3").then("f4").then("f5"))),
         fission_fusion_rules
     );
     db_prove_equiv("map first fission (DB)",
-        format!("(app map {})", "%1".thendb("%2").thendb("%3").thendb("%4").thendb("%5")),
-        "(app map %1)".thendb(format!("(app map {})", "%2".thendb("%3").thendb("%4").thendb("%5"))),
+        format!("(lam (lam (lam (lam (app map {})))))", "%3".thendb("%2").thendb("%1").thendb("%0")),
+        format!("(lam (lam (lam (lam {}))))", "(app map %3)".thendb(format!("(app map {})", "%2".thendb("%1").thendb("%0")))),
         fission_fusion_rules
     );
     to_db_prove_equiv("map first fission (DB2)",
-        format!("(app map {})", "f1".then("f2").then("f3").then("f4").then("f5")),
-        "(app map f1)".then(format!("(app map {})", "f2".then("f3").then("f4").then("f5"))),
+        format!("(app map {})", "f1".then("f2").then("f3").then("f4")),
+        "(app map f1)".then(format!("(app map {})", "f2".then("f3").then("f4"))),
         fission_fusion_rules
     );
     prove_equiv("map first fission (then)",
@@ -275,7 +277,10 @@ fn main() {/*
 
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
-    let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map mulT)").pipe("(app (app reduce add) 0)"));
+    // (lam mt (app (app mul (app fst (var mt))) (app snd (var mt))))
+    // \mt. (app (app mul (app fst mt)) (app snd mt)))
+    // \mt. (mul (fst mt) (snd mt))
+    let tmp = format!("(lam a (lam b {}))", "(app (app zip (var a)) (var b))".pipe("(app map (lam mt (app (app mul (app fst (var mt))) (app snd (var mt)))))").pipe("(app (app reduce add) 0)"));
     let dot = tmp.as_str();
     let dot2: String = format!("{}", expr_fresh_alpha_rename(dot.parse().unwrap()));
     let base = slide2d_3_1.then(format!(
@@ -297,7 +302,7 @@ fn main() {/*
         format!("(app map {})", "transpose".then(format!("(app map (app {} weightsV))", dot)))).then(
         format!("(app map {})", "(app (app slide 3) 1)".then(format!("(app map (app {} weightsH))", dot2)))
     );
-
+/*
     prove_equiv("base to factorised", base.clone(), factorised.clone(),
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
     to_db_prove_equiv("base to factorised (DB)", base.clone(), factorised,
@@ -306,11 +311,12 @@ fn main() {/*
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
     to_db_prove_equiv("base to factorisedVH (DB)", base.clone(), factorisedVH,
                 &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
+
     prove_equiv("scanline to separated", scanline.clone(), separated.clone(),
                 &["eta", "beta", "map-fission", "map-fusion"]);
     to_db_prove_equiv("scanline to separated (DB)", scanline.clone(), separated,
                 &["eta", "beta", "map-fission", "map-fusion"]);
-/*
+
     let scanline_s1 = "(app map (app (app slide 3) 1))".then(
         "(app (app slide 3) 1)").then(
         "(app map transpose)").then(format!(
