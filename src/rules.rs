@@ -33,6 +33,11 @@ pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
             "(app map (>> ?f ?g))" => "(>> (app map ?f) (app map ?g))"),
         rewrite!("then-assoc-1"; "(>> ?f (>> ?g ?h))" => "(>> (>> ?f ?g) ?h)"),
         rewrite!("then-assoc-2"; "(>> (>> ?f ?g) ?h)" => "(>> ?f (>> ?g ?h))"),
+        rewrite!("transpose-pair-after-then";
+                 "?f" => "(>> (>> ?f transpose) transpose)"),
+        rewrite!("map-map-f-before-transpose-then";
+                 "(>> (app map (app map ?f)) transpose)" =>
+                 "(>> transpose (app map (app map ?f)))"),
 
         // reductions
         rewrite!("eta"; "(lam ?v (app ?f (var ?v)))" => "?f"

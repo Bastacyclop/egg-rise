@@ -392,4 +392,31 @@ fn main() {/*
     prove_equiv("base to scanline", base, scanline, scanline_rules);
     */
     to_db_prove_equiv("base to scanline (DB)", base, scanline, scanline_rules);
+
+    let reorder_rules = &[
+        "then-assoc-1", "then-assoc-2",
+        "map-fusion-then", "map-fission-then",
+        "transpose-pair-after-then", "map-map-f-before-transpose-then"];
+
+    let reorder3D_base = "(lam f (app map (app map (app map (var f)))))";
+    let reorder3D_132 = "(lam f (>> (app map transpose) (>> (app map (app map (app map (var f)))) (app map transpose))))".into();
+    let reorder3D_213 = "(lam f (>> transpose (>> (app map (app map (app map (var f)))) transpose)))".into();
+    let reorder3D_231 = "(lam f (>> transpose (>> (app map transpose) (>> (app map (app map (app map (var f)))) (>> (app map transpose) transpose)))))".into();
+    let reorder3D_321 = "(lam f (>> (app map transpose) (>> transpose (>> (app map transpose) (>> (app map (app map (app map (var f)))) (>> (app map transpose) (>> transpose (app map transpose))))))))".into();
+    let reorder3D_312 = "(lam f (>> (app map transpose) (>> transpose (>> (app map (app map (app map (var f)))) (>> transpose (app map transpose))))))".into();
+    prove_equiv("reorder 3D 132", reorder3D_base.into(), reorder3D_132, reorder_rules);
+    prove_equiv("reorder 3D 213", reorder3D_base.into(), reorder3D_213, reorder_rules);
+    prove_equiv("reorder 3D 231", reorder3D_base.into(), reorder3D_231, reorder_rules);
+    prove_equiv("reorder 3D 321", reorder3D_base.into(), reorder3D_321, reorder_rules);
+    prove_equiv("reorder 3D 312", reorder3D_base.into(), reorder3D_312, reorder_rules);
+
+    let reorder4D_base = "(lam f (app map (app map (app map (app map (var f))))))";
+    let reorder4D_1243 = "(lam f (>> (app map (app map transpose)) (>> (app map (app map (app map (app map (var f))))) (app map (app map transpose)))))";
+    let reorder4D_1324 = "(lam f (>> (app map transpose) (>> (app map (app map (app map (app map (var f))))) (app map transpose))))";
+    let reorder4D_2134 = "(lam f (>> transpose (>> (app map (app map (app map (app map (var f))))) transpose)))";
+    let reorder4D_4321 = "(lam f (>> (app map (app map transpose)) (>> (app map transpose) (>> transpose (>> (app map (app map transpose)) (>> (app map transpose) (>> (app map (app map transpose)) (>> (app map (app map (app map (app map (var f))))) (>> (app map (app map transpose)) (>> (app map transpose) (>> (app map (app map transpose)) (>> transpose (>> (app map transpose) (app map (app map transpose)))))))))))))))";
+    prove_equiv("reorder 4D 1243", reorder4D_base.into(), reorder4D_1243.into(), reorder_rules);
+    prove_equiv("reorder 4D 1324", reorder4D_base.into(), reorder4D_1324.into(), reorder_rules);
+    prove_equiv("reorder 4D 2134", reorder4D_base.into(), reorder4D_2134.into(), reorder_rules);
+    prove_equiv("reorder 4D 4321", reorder4D_base.into(), reorder4D_4321.into(), reorder_rules);
 }
