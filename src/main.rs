@@ -398,6 +398,8 @@ fn main() {/*
         "map-fusion-then", "map-fission-then",
         "transpose-pair-after-then", "map-map-f-before-transpose-then"];
 
+    let reorder2D_base = "(lam f (app map (app map (var f))))";
+
     let reorder3D_base = "(lam f (app map (app map (app map (var f)))))";
     let reorder3D_132 = "(lam f (>> (app map transpose) (>> (app map (app map (app map (var f)))) (app map transpose))))".into();
     let reorder3D_213 = "(lam f (>> transpose (>> (app map (app map (app map (var f)))) transpose)))".into();
@@ -418,5 +420,19 @@ fn main() {/*
     prove_equiv("reorder 4D 1243", reorder4D_base.into(), reorder4D_1243.into(), reorder_rules);
     prove_equiv("reorder 4D 1324", reorder4D_base.into(), reorder4D_1324.into(), reorder_rules);
     prove_equiv("reorder 4D 2134", reorder4D_base.into(), reorder4D_2134.into(), reorder_rules);
-    prove_equiv("reorder 4D 4321", reorder4D_base.into(), reorder4D_4321.into(), reorder_rules);
+    // FIXME: TimeOut
+    // prove_equiv("reorder 4D 4321", reorder4D_base.into(), reorder4D_4321.into(), reorder_rules);
+ 
+    let tiling_rules = &[
+        "then-assoc-1", "then-assoc-2",
+        "split-join-then",
+        "map-fusion-then", "map-fission-then",
+        "transpose-pair-after-then", "map-map-f-before-transpose-then"];
+   
+    let tiling2D_1 = "(lam f (>> split (>> (app map (app map (app map (var f)))) join)))";
+    let tiling2D_2 = "(lam f (app map (>> split (>> (app map (app map (var f))) join))))";
+    let tiling2D_3 = "(lam f (>> split (>> (app map (app map split)) (>> (app map transpose) (>> (app map (app map (app map (app map (var f))))) (>> (app map transpose) (>> (app map (app map join)) join)))))))";
+    prove_equiv("tiling 2D (1)", reorder2D_base.into(), tiling2D_1.into(), tiling_rules);
+    prove_equiv("tiling 2D (2)", reorder2D_base.into(), tiling2D_2.into(), tiling_rules);
+    prove_equiv("tiling 2D (3)", reorder2D_base.into(), tiling2D_3.into(), tiling_rules);
 }
