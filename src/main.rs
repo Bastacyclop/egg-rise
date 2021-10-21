@@ -385,9 +385,9 @@ fn prove_equiv(name: &str, startS: String, goalS: String, rule_names: &[&str]) {
 
     let goals2 = goals.clone();
     runner = runner
-        //.with_scheduler(SimpleScheduler)
-        .with_node_limit(10_000_000)
-        .with_iter_limit(120)
+        .with_scheduler(SimpleScheduler)
+        .with_node_limit(1_000_000)
+        .with_iter_limit(60)
         .with_time_limit(std::time::Duration::from_secs(600))
         .with_hook(move |r| {
             if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
