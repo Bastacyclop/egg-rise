@@ -30,6 +30,9 @@ define_language! {
         "app" = App([Id; 2]),
         "lam" = Lambda(Id),
 
+        "sig" = Sigma([Id; 3]),
+        "phi" = Phi([Id; 3]),
+
         Number(i32),
         Symbol(Symbol),
     }
@@ -70,10 +73,10 @@ impl Analysis<DBRise> for DBRiseAnalysis {
                 free.insert(*v);
             }
             DBRise::Lambda(a) => {
-                enode.for_each(|c| free.extend(
-                    egraph[c].data.free.iter().cloned()
+                free.extend(
+                    egraph[*a].data.free.iter().cloned()
                         .filter(|&idx| idx != Index(0))
-                        .map(|idx| Index(idx.0 - 1))));
+                        .map(|idx| Index(idx.0 - 1)));
             }
             _ => {
                 enode.for_each(|c| free.extend(&egraph[c].data.free));

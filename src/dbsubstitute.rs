@@ -1,6 +1,5 @@
 use egg::*;
 use crate::dbrise::*;
-use std::collections::HashMap;
 
 pub fn shift_copy(expr: &DBRiseExpr, up: bool, cutoff: Index) -> DBRiseExpr {
     let mut result = expr.as_ref().to_owned();
@@ -24,6 +23,7 @@ pub fn shift_mut(expr: &mut [DBRise], up: bool, cutoff: Index) {
                 rec(expr, usize::from(f), up, cutoff);
                 rec(expr, usize::from(e), up, cutoff);
             }
+            DBRise::Sigma(_) | DBRise::Phi(_) => unimplemented!(),
             DBRise::Number(_) | DBRise::Symbol(_) => ()
         }
     }
@@ -53,6 +53,7 @@ fn replace(expr: &[DBRise], index: Index, subs: &mut [DBRise]) -> Vec<DBRise> {
                 let e2 = rec(result, expr, usize::from(e), index, subs);
                 add(result, DBRise::App([f2, e2]))
             }
+            DBRise::Sigma(_) | DBRise::Phi(_) => unimplemented!(),
             DBRise::Symbol(_) | DBRise::Number(_) =>
                 add(result, expr[ei].clone())
         }

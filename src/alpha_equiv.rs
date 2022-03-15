@@ -2,12 +2,11 @@ use egg::*;
 use crate::rise::*;
 use crate::fresh_id;
 use std::collections::{HashMap, HashSet};
-use std::ptr::eq;
 
 pub fn expr_to_alpha_equiv_pattern(e: RecExpr<Rise>) -> Pattern<Rise> {
     use std::str::FromStr;
 
-    println!("{}", e);
+    // println!("{}", e);
     let p = Pattern::<Rise>::from(
         expr_alpha_rename(e, ENodeOrVar::ENode,
                           |s| {
@@ -23,7 +22,7 @@ pub fn expr_to_alpha_equiv_pattern(e: RecExpr<Rise>) -> Pattern<Rise> {
 
 pub fn expr_fresh_alpha_rename(e: RecExpr<Rise>) -> RecExpr<Rise> {
     expr_alpha_rename(e, |r| r,
-                      |s| {
+                      |_s| {
                           let s2 = format!("x{}", fresh_id());
                           Rise::Symbol(s2.into())
                       },
@@ -47,7 +46,7 @@ pub fn expr_alpha_rename<L, BS, FS>(
         sym_map: &'a mut HashMap<Symbol, L>,
         bound_symbol: BS,
         free_symbol: FS,
-    };
+    }
     fn rec<L, BS, FS>(index: usize, env: &mut Env<L, BS, FS>)
         where L: Language, BS: Fn(Symbol) -> L, FS: Fn(Symbol) -> L
     {
@@ -71,6 +70,19 @@ pub fn expr_alpha_rename<L, BS, FS>(
                 }
                 rec(x.into(), env);
                 rec(e.into(), env);
+            }
+            Rise::Let(_) => { // [x, e, b]
+                unimplemented!();
+                /* let s = match env.original_vec[usize::from(x)] {
+                    Rise::Symbol(s) => s,
+                    _ => panic!("expected symbol for let")
+                };
+                if env.sym_map.insert(s, (env.bound_symbol)(s)).is_some() {
+                    panic!("symbol duplicate");
+                }
+                rec(x.into(), env);
+                rec(e.into(), env);
+                rec(b.into(), env); */
             }
             Rise::Symbol(sym) => {
                 env.new_vec[index] = env.sym_map.get(&sym).cloned().unwrap_or_else(|| (env.free_symbol)(sym));

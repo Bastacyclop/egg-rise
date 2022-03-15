@@ -12,9 +12,8 @@ use crate::rise::*;
 use crate::dbrise::*;
 use crate::rules::*;
 use crate::dbrules::*;
-use crate::scheduler::*;
+// use crate::scheduler::*;
 use crate::alpha_equiv::*;
-use std::collections::HashMap;
 use crate::dbrise::DBRiseExpr;
 
 static mut COUNTER: u32 = 0;
@@ -73,7 +72,7 @@ impl DSL for &str {
 fn normalize(e: &RecExpr<Rise>) -> RecExpr<Rise> {
     let norm_rules = rules(&[
         "eta", "beta"
-    ]);
+    ], false);
     let runner = Runner::default().with_expr(e).run(&norm_rules);
     let (egraph, root) = (runner.egraph, runner.roots[0]);
     let mut extractor = Extractor::new(&egraph, AstSize);
@@ -111,6 +110,7 @@ fn to_db(e: RecExpr<Rise>) -> DBRiseExpr {
                 let e2 = rec(r, expr, usize::from(e), bound);
                 add(r, DBRise::App([f2, e2]))
             }
+            Rise::Let([_, _, _]) => unimplemented!(),
             Rise::Then(_) => unimplemented!()
         }
     }
@@ -121,13 +121,55 @@ fn to_db(e: RecExpr<Rise>) -> DBRiseExpr {
 fn dbnormalize(e: &DBRiseExpr) -> DBRiseExpr {
     let norm_rules = dbrules(&[
         "eta", "beta"
-    ]);
+    ], false);
     let runner = Runner::default().with_expr(e).run(&norm_rules);
     let (egraph, root) = (runner.egraph, runner.roots[0]);
     let mut extractor = Extractor::new(&egraph, AstSize);
     let (_, normalized) = extractor.find_best(root);
     normalized
 }
+
+fn bench_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str], should_normalize: bool) {
+    println!();
+    println!("---- {} ----", name);
+
+    let start_p: RecExpr<Rise> = start_s.parse().unwrap();
+    let goal_p: RecExpr<Rise> = goal_s.parse().unwrap();
+    let start = if should_normalize { normalize(&start_p) } else { start_p };
+    let goal = if should_normalize { normalize(&goal_p) } else { goal_p };
+    println!("start: {}", start);
+    println!("goal: {}", goal);
+/*
+    let ext_rules = rules(
+        &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
+        false);
+    prove_equiv_aux(&format!("ext {}", name), start.clone(), goal.clone(), ext_rules);
+
+    let mut exp_rules = vec!["eta", "beta",
+        "let-app", "let-var-same", "let-var-diff", "let-lam-same", "let-lam-diff", "let-const"
+    ];
+    exp_rules.extend(rule_names);
+    prove_equiv_aux(&format!("exp {}", name), start.clone(), goal.clone(), &exp_rules[..]);
+*/
+
+    println!("db ext {}", name);
+    let db_ext_rules = dbrules(
+        &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
+        false);
+    to_db_prove_equiv_aux(start.clone(), goal.clone(), db_ext_rules);
+
+    println!("db exp {}", name);
+    let db_exp_rules = dbrules(&([
+            "eta", "beta", 
+            "sig-lam", "sig-app", "sig-var-const",
+            "phi-lam", "phi-app", "phi-var-const"
+        ].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
+        true);
+    to_db_prove_equiv_aux(start, goal, db_exp_rules);
+
+    println!();
+}
+
 
 fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str]) {
     println!();
@@ -137,7 +179,10 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
     let goal = normalize(&goal_s.parse().unwrap());
     println!("starting from {}", start);
 
-    let rules_to_goal = rules(rule_names);
+    prove_equiv_aux(start, goal, rules(rule_names, false));
+}
+
+fn prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite<Rise, RiseAnalysis>>) {
     let goal = expr_to_alpha_equiv_pattern(goal);
     let goals: Vec<Pattern<Rise>> = vec![goal];
     let mut runner = Runner::default()
@@ -154,16 +199,17 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
         .with_scheduler(SimpleScheduler)
         //.with_scheduler(Scheduler::default())
         .with_node_limit(10_000_000)
-        .with_iter_limit(20)
-        .with_time_limit(std::time::Duration::from_secs(600)) // 10mn
+        .with_iter_limit(50)
+        .with_time_limit(std::time::Duration::from_secs(300)) // 5mn
         .with_hook(move |r| {
             if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
                 Err("Done".into())
             } else {
                 Ok(())
             }
-        }).run(&rules_to_goal);
+        }).run(&rules);
     runner.print_report();
+    runner.iterations.iter().for_each(|i| println!("{:?}", i));
     // count_alpha_equiv(&mut runner.egraph);
     // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
     runner.egraph.check_goals(id, &goals);
@@ -180,7 +226,10 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
     println!("normalized start: {}", start);
     println!("normalized goal: {}", goal);
 
-    let rules_to_goal = dbrules(rule_names);
+    db_prove_equiv_aux(start, goal, dbrules(rule_names, false));
+}
+
+fn db_prove_equiv_aux(start: RecExpr<DBRise>, goal: RecExpr<DBRise>, rules: Vec<Rewrite<DBRise, DBRiseAnalysis>>) {
     let goals: Vec<Pattern<DBRise>> = vec![goal.as_ref().into()];
     let mut runner = Runner::default()
         .with_expr(&start);
@@ -195,9 +244,9 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
     runner = runner
         .with_scheduler(SimpleScheduler)
         //.with_scheduler(Scheduler::default())
-        .with_node_limit(1_000_000)
-        .with_iter_limit(30)
-        .with_time_limit(std::time::Duration::from_secs(600)) // 10mn
+        .with_node_limit(10_000_000)
+        .with_iter_limit(50)
+        .with_time_limit(std::time::Duration::from_secs(300)) // 5mn
         .with_hook(move |r| {
             //r.egraph.dot().to_svg(format!("/tmp/egg{}.svg", r.iterations.len())).unwrap();
             if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
@@ -205,7 +254,7 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
             } else {
                 Ok(())
             }
-        }).run(&rules_to_goal);
+        }).run(&rules);
     runner.print_report();
     runner.iterations.iter().for_each(|i| println!("{:?}", i));
     runner.egraph.check_goals(id, &goals);
@@ -215,63 +264,80 @@ fn to_db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[
     db_prove_equiv(name, to_db_str(start_s), to_db_str(goal_s), rule_names)
 }
 
-fn main() {/*
+fn to_db_prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite<DBRise, DBRiseAnalysis>>) {
+    db_prove_equiv_aux(to_db(start), to_db(goal), rules)
+}
+
+fn main() {
     let e =
         "(app map (app (app padClamp 1) 1))".then(
         "(app (app padClamp 1) 1)".then(
         "next"));
-    prove_equiv("trivial", e.clone(), e, &["eta", "beta"]);
+    prove_equiv("trivial", e.clone(), e, &[]);
 
-    prove_equiv("simple beta reduction",
+    bench_prove_equiv("simple_eta_reduction",
         "(app (lam x (app map (var x))) f)".into(),
         "(app map f)".into(),
-        &["eta", "beta"]
+        &[], false
     );
-    db_prove_equiv("simple beta reduction (DB)",
-                "(app (lam (app map %0)) f)".into(),
-                "(app map f)".into(),
-                &["eta", "beta"]
-    );
-    db_prove_equiv("simple eta reduction (DB)",
-                   "(lam (app %1 %0))".into(), "%0".into(), &[]);
 
-    let fission_fusion_rules = &["eta", "beta", "map-fusion", "map-fission"];
+    bench_prove_equiv("lambda_under",
+        "(lam x (app (app add 4) (app (lam y (var y)) 4)))".into(),
+        "(lam x (app (app add 4) 4))".into(),
+        &[], false
+    );
 
-    prove_equiv("map first fission",
-        format!("(app map {})", "f1".then("f2").then("f3").then("f4").then("f5")),
-        "(app map f1)".then(format!("(app map {})", "f2".then("f3").then("f4").then("f5"))),
-        fission_fusion_rules
+    bench_prove_equiv("lambda_compose",
+        "(app (lam compose 
+            (app (lam add1 
+              (app (app (var compose) (var add1)) (var add1))
+            ) (lam y (app (app add (var y)) 1)))
+          ) (lam f (lam g (lam x (app (var f)
+                                 (app (var g) (var x)))))))".into(),
+        "(lam x (app (app add (app (app add (var x)) 1)) 1))".into(),
+        &[], false
     );
-    db_prove_equiv("map first fission (DB)",
-        format!("(lam (lam (lam (lam (app map {})))))", "%3".thendb("%2").thendb("%1").thendb("%0")),
-        format!("(lam (lam (lam (lam {}))))", "(app map %3)".thendb(format!("(app map {})", "%2".thendb("%1").thendb("%0")))),
-        fission_fusion_rules
+
+    bench_prove_equiv("lambda_compose_many",
+        "(app (lam compose 
+            (app (lam add1
+                (app (app (var compose) (var add1))
+                    (app (app (var compose) (var add1))
+                        (app (app (var compose) (var add1))
+                            (app (app (var compose) (var add1))
+                                (app (app (var compose) (var add1))
+                                        (app (app (var compose) (var add1))
+                                            (var add1)))))))
+            ) (lam y (app (app add (var y)) 1)))
+          ) (lam f (lam g (lam x (app (var f)
+                                 (app (var g) (var x)))))))".into(),
+        "(lam x (app (app add
+                    (app (app add
+                        (app (app add
+                            (app (app add
+                                (app (app add
+                                    (app (app add
+                                        (app (app add
+                                            (var x)) 1)) 1)) 1)) 1)) 1)) 1)) 1))".into(),
+        &[], false
     );
-    to_db_prove_equiv("map first fission (DB2)",
-        format!("(app map {})", "f1".then("f2").then("f3").then("f4")),
-        "(app map f1)".then(format!("(app map {})", "f2".then("f3").then("f4"))),
-        fission_fusion_rules
-    );
+
+    let fission_fusion_rules = &["map-fusion", "map-fission"];
+
+    let fissioned = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
+        "(app map (var f1))".then("(app map (var f2))").then("(app map (var f3))").then("(app map (var f4))"));
+    let half_fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
+        format!("(app map {})", "(var f1)".then("(var f2)")).then(format!("(app map {})", "(var f3)".then("(var f4)"))));
+    let fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
+        format!("(app map {})", "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)")));
+    bench_prove_equiv("map fusion", fissioned.clone(), half_fused.clone(), fission_fusion_rules, true);
+    bench_prove_equiv("map fission", fused.clone(), fissioned, fission_fusion_rules, true);
+    bench_prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules, true);
+
+/*
     prove_equiv("map first fission (then)",
                 "(app map (>> f1 (>> f2 (>> f3 (>> f4 f5)))))".into(),
                 "(>> (app map f1) (app map (>> f2 (>> f3 (>> f4 f5)))))".into(),
-                &["map-fusion-then", "map-fission-then", "then-assoc-1", "then-assoc-2"]);
-*/
-/*
-    let fissioned = "(app map (var f1))".then("(app map (var f2))").then("(app map (var f3))").then("(app map (var f4))");
-    let half_fused = format!("(app map {})", "(var f1)".then("(var f2)")).then(format!("(app map {})", "(var f3)".then("(var f4)")));
-    let fused = format!("(app map {})", "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)"));
-    prove_equiv("simple map fusion", fissioned.clone(), half_fused.clone(), fission_fusion_rules);
-    prove_equiv("simple map fission", fused.clone(), fissioned, fission_fusion_rules);
-    prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules);
-
-    let simpler_half_fused = "(app map (var f2))".then(format!("(app map {})", "(var f3)".then("(var f4)")));
-    let simpler_fused = format!("(app map {})", "(var f2)".then("(var f3)").then("(var f4)"));
-    prove_equiv("simpler map fission + map fusion", simpler_fused, simpler_half_fused, fission_fusion_rules);
-
-    let then_half_fused = "(>> (app map (>> (var f1) (var f2))) (app map (>> (var f3) (var f4))))".into();
-    let then_fused = "(app map (>> (var f1) (>> (var f2) (>> (var f3) (var f4)))))".into();
-    prove_equiv("then map fission + map fusion", then_fused, then_half_fused,
                 &["map-fusion-then", "map-fission-then", "then-assoc-1", "then-assoc-2"]);
 */
 
@@ -288,7 +354,7 @@ fn main() {/*
     let factorised = slide2d_3_1.then(format!(
         "(app map (app map {}))", format!("(app map (app {} weightsH))", dot).then(format!("(app {} weightsV)", dot2))
     ));
-    let factorisedVH = slide2d_3_1.then(format!(
+    let factorised_vh = slide2d_3_1.then(format!(
         "(app map (app map {}))", "transpose".then(format!("(app map (app {} weightsV))", dot)).then(format!("(app {} weightsH)", dot2))
     ));
     let scanline = "(app (app slide 3) 1)".then(format!(
@@ -302,21 +368,22 @@ fn main() {/*
         format!("(app map {})", "transpose".then(format!("(app map (app {} weightsV))", dot)))).then(
         format!("(app map {})", "(app (app slide 3) 1)".then(format!("(app map (app {} weightsH))", dot2)))
     );
+    
+    bench_prove_equiv("base to factorised", base.clone(), factorised.clone(),
+        &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true);
+    bench_prove_equiv("base to factorised VH", base.clone(), factorised_vh.clone(),
+        &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true);
+
+    bench_prove_equiv("scanline to separated", scanline.clone(), separated.clone(),
+        &["map-fission", "map-fusion"], true);
+
+    let scanline_rules = &[
+        "remove-transpose-pair", "map-fusion", "map-fission",
+        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
+        "separate-dot-vh-simplified", "separate-dot-hv-simplified"];
+
+    bench_prove_equiv("base to scanline", base, scanline, scanline_rules, true);
 /*
-    prove_equiv("base to factorised", base.clone(), factorised.clone(),
-                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    to_db_prove_equiv("base to factorised (DB)", base.clone(), factorised,
-                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    prove_equiv("base to factorisedVH", base.clone(), factorisedVH.clone(),
-                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-    to_db_prove_equiv("base to factorisedVH (DB)", base.clone(), factorisedVH,
-                &["eta", "beta", "separate-dot-vh-simplified", "separate-dot-hv-simplified"]);
-
-    prove_equiv("scanline to separated", scanline.clone(), separated.clone(),
-                &["eta", "beta", "map-fission", "map-fusion"]);
-    to_db_prove_equiv("scanline to separated (DB)", scanline.clone(), separated,
-                &["eta", "beta", "map-fission", "map-fusion"]);
-
     let scanline_s1 = "(app map (app (app slide 3) 1))".then(
         "(app (app slide 3) 1)").then(
         "(app map transpose)").then(format!(
@@ -367,12 +434,7 @@ fn main() {/*
             "(app map {})", format!("(app {} weightsH)", dot2)))
     ));
     // scanline_s9 = scanline
-*/
-    let scanline_rules = &[
-        "eta", "beta", "remove-transpose-pair", "map-fusion", "map-fission",
-        "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
-        "separate-dot-vh-simplified", "separate-dot-hv-simplified"];
-    /*
+
     prove_equiv("base to scanline s1", base.clone(), scanline_s1.clone(), scanline_rules);
     prove_equiv("base to scanline s2", base.clone(), scanline_s2.clone(), scanline_rules);
     prove_equiv("base to scanline s5", base.clone(), scanline_s5.clone(), scanline_rules);
@@ -387,12 +449,9 @@ fn main() {/*
                 scanline_rules);
     prove_equiv("base to scanline s8", base.clone(), scanline_s8,
                 scanline_rules);
+*/
 
-    // FIXME: IterationLimit
-    prove_equiv("base to scanline", base, scanline, scanline_rules);
-    */
-    to_db_prove_equiv("base to scanline (DB)", base, scanline, scanline_rules);
-
+/*
     let reorder_rules = &[
         "then-assoc-1", "then-assoc-2",
         "map-fusion-then", "map-fission-then",
@@ -419,4 +478,5 @@ fn main() {/*
     prove_equiv("reorder 4D 1324", reorder4D_base.into(), reorder4D_1324.into(), reorder_rules);
     prove_equiv("reorder 4D 2134", reorder4D_base.into(), reorder4D_2134.into(), reorder_rules);
     prove_equiv("reorder 4D 4321", reorder4D_base.into(), reorder4D_4321.into(), reorder_rules);
+*/
 }

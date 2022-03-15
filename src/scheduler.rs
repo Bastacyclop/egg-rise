@@ -46,7 +46,7 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
         N: Analysis<L>,
 {
     fn can_stop(&mut self, iteration: usize) -> bool {
-        let n_stats = self.stats.len();
+        // let n_stats = self.stats.len();
 
         let mut banned: Vec<_> = self
             .stats

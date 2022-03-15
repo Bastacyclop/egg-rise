@@ -8,6 +8,9 @@ define_language! {
         "app" = App([Id; 2]),
         "lam" = Lambda([Id; 2]),
 
+        "let" = Let([Id; 3]),
+        // "fix"
+
         ">>" = Then([Id; 2]),
 
         Number(i32),
@@ -54,6 +57,11 @@ impl Analysis<Rise> for RiseAnalysis {
             Rise::Lambda([v, a]) => {
                 extend(&mut free, a);
                 free.remove(v);
+            }
+            Rise::Let([v, a, b]) => {
+                extend(&mut free, b);
+                free.remove(v);
+                extend(&mut free, a);
             }
             _ => {
                 enode.for_each(|c| extend(&mut free, &c));

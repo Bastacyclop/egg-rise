@@ -7,6 +7,10 @@ fn var(s: &str) -> Var {
     s.parse().unwrap()
 }
 
+fn is_not_same_var(v1: Var, v2: Var) -> impl Fn(&mut RiseEGraph, Id, &Subst) -> bool {
+    move |egraph, _, subst| egraph.find(subst[v1]) != egraph.find(subst[v2])
+}
+
 fn contains_ident(v1: Var, v2: Var) -> impl Fn(&mut RiseEGraph, Id, &Subst) -> bool {
     move |egraph, _, subst| egraph[subst[v1]].data.free.contains(&subst[v2])
 }
@@ -15,8 +19,19 @@ fn neg(f: impl Fn(&mut RiseEGraph, Id, &Subst) -> bool) -> impl Fn(&mut RiseEGra
     move |egraph, id, subst| !f(egraph, id, subst)
 }
 
-pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
-    let all = vec![
+fn is_const(v: Var) -> impl Fn(&mut RiseEGraph, Id, &Subst) -> bool {
+    move |egraph, _, subst| {
+        let e: &[Rise] = egraph[subst[v]].data.beta_extract.as_ref();
+        (e.len() == 1) && match e[0] {
+            Rise::Symbol(_) => true,
+            Rise::Number(_) => true,
+            _ => false,
+        }
+    }
+}
+
+pub fn rules(names: &[&str], use_explicit_subs: bool) -> Vec<Rewrite<Rise, RiseAnalysis>> {
+    let common = vec![
         // algorithmic
         rewrite!("map-fusion";
             "(app (app map ?f) (app (app map ?g) ?arg))" =>
@@ -43,9 +58,6 @@ pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
         rewrite!("eta"; "(lam ?v (app ?f (var ?v)))" => "?f"
             // TODO: if conditions should be recursive filters?
             if neg(contains_ident(var("?f"), var("?v")))),
-        rewrite!("beta"; "(app (lam ?v ?body) ?e)" =>
-            //{ BetaApplier { v: var("?v"), e: var("?e"), body: var("?body") } }),
-            { BetaExtractApplier { v: var("?v"), e: var("?e"), body: var("?body") } }),
         rewrite!("remove-transpose-pair";
             "(app transpose (app transpose ?x))" => "?x"),
 
@@ -76,14 +88,48 @@ pub fn rules(names: &[&str]) -> Vec<Rewrite<Rise, RiseAnalysis>> {
             "(app (app slide ?sz) 1)" => "(app rotateValues ?sz)"),
 
         // domain-specific
+        // mulT = (lam x (app (app mul (app fst (var x))) (app snd (var x))))
         rewrite!("separate-dot-hv-simplified";
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
-            { with_fresh_var("?sdhv", "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsV) (app (app map (lam ?sdhv (app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsH) (var ?sdhv)))))) ?nbh))))") }),
+            "(app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+             (app (app zip (app join weights2d)) (app join ?nbh))))" =>
+            { with_fresh_var("?sdhv", "(app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+                (app (app zip weightsV) (app (app map (lam ?sdhv (app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+                (app (app zip weightsH) (var ?sdhv)))))) ?nbh))))") }),
         rewrite!("separate-dot-vh-simplified";
-            "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip (app join weights2d)) (app join ?nbh))))" =>
-            { with_fresh_var("?sdvh", "(app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsH) (app (app map (lam ?sdvh (app (app (app reduce add) 0) (app (app map mulT) (app (app zip weightsV) (var ?sdvh)))))) (app transpose ?nbh)))))") }),
+            "(app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+             (app (app zip (app join weights2d)) (app join ?nbh))))" =>
+            { with_fresh_var("?sdvh", "(app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+                (app (app zip weightsH) (app (app map (lam ?sdvh (app (app (app reduce add) 0) (app (app map (lam ?x (app (app mul (app fst (var ?x))) (app snd (var ?x)))))
+                (app (app zip weightsV) (var ?sdvh)))))) (app transpose ?nbh)))))") }),
     ];
-    let mut map: HashMap<String, _> = all.into_iter().map(|r| (r.name().to_owned(), r)).collect();
+    let extraction_substitution = vec![
+        rewrite!("beta"; "(app (lam ?v ?body) ?e)" =>
+            { BetaExtractApplier { v: var("?v"), e: var("?e"), body: var("?body") } }),
+    ];
+    let explicit_substitution = vec![
+        rewrite!("beta"; "(app (lam ?v ?body) ?e)" => "(let ?v ?e ?body)"),
+
+        // explicit substitution
+        rewrite!("let-app"; "(let ?v ?e (app ?a ?b))" => "(app (let ?v ?e ?a) (let ?v ?e ?b))"),
+        rewrite!("let-var-same"; "(let ?v1 ?e (var ?v1))" => "?e"),
+        rewrite!("let-var-diff"; "(let ?v1 ?e (var ?v2))" => "(var ?v2)"
+            if is_not_same_var(var("?v1"), var("?v2"))),
+        rewrite!("let-lam-same"; "(let ?v1 ?e (lam ?v1 ?body))" => "(lam ?v1 ?body)"),
+        rewrite!("let-lam-diff"; "(let ?v1 ?e (lam ?v2 ?body))" =>
+            { CaptureAvoid {
+                fresh: var("?fresh"), v2: var("?v2"), e: var("?e"),
+                if_not_free: "(lam ?v2 (let ?v1 ?e ?body))".parse().unwrap(),
+                if_free: "(lam ?fresh (let ?v1 ?e (let ?v2 (var ?fresh) ?body)))".parse().unwrap(),
+            }}
+            if is_not_same_var(var("?v1"), var("?v2"))),
+        rewrite!("let-const"; "(let ?v ?e ?c)" => "?c" if is_const(var("?c"))),
+    ];
+    let mut map: HashMap<String, _> = common.into_iter().map(|r| (r.name().to_owned(), r)).collect();
+    if use_explicit_subs {
+        map.extend(explicit_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+    } else {
+        map.extend(extraction_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+    }
     names.into_iter().map(|&n| map.remove(n).expect("rule not found")).collect()
 }
 
@@ -146,5 +192,36 @@ impl Applier<Rise, RiseAnalysis> for MakeFresh {
         let mut subst = subst.clone();
         subst.insert(self.fresh, egraph.add(sym));
         self.pattern.apply_one(egraph, eclass, &subst)
+    }
+}
+
+struct CaptureAvoid {
+    fresh: Var,
+    v2: Var,
+    e: Var,
+    if_not_free: Pattern<Rise>,
+    if_free: Pattern<Rise>,
+}
+
+impl Applier<Rise, RiseAnalysis> for CaptureAvoid {
+    fn apply_one(
+        &self,
+        egraph: &mut RiseEGraph,
+        eclass: Id,
+        subst: &Subst,
+    ) -> Vec<Id> {
+        let e = subst[self.e];
+        let v2 = subst[self.v2];
+        let v2_free_in_e = egraph[e].data.free.contains(&v2);
+        if v2_free_in_e {
+            let mut subst = subst.clone();
+            let sym = Rise::Symbol(format!("_{}", eclass).into());
+            subst.insert(self.fresh, egraph.add(sym));
+            self.if_free
+                .apply_one(egraph, eclass, &subst)
+        } else {
+            self.if_not_free
+                .apply_one(egraph, eclass, &subst)
+        }
     }
 }
