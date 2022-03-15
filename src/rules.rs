@@ -53,6 +53,10 @@ pub fn rules(names: &[&str], use_explicit_subs: bool) -> Vec<Rewrite<Rise, RiseA
         rewrite!("map-map-f-before-transpose-then";
                  "(>> (app map (app map ?f)) transpose)" =>
                  "(>> transpose (app map (app map ?f)))"),
+        rewrite!("split-join-then";
+                 "(app map ?f)" => "(>> (>> split (app map (app map ?f))) join)"),
+        // rewrite!("split-join-then";
+        //         "(app map ?f)" => "(>> split (>> (app map (app map ?f)) join))"),
 
         // reductions
         rewrite!("eta"; "(lam ?v (app ?f (var ?v)))" => "?f"
