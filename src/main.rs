@@ -235,7 +235,7 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
     println!("{}", name);
 
     println!("start: {}", start_s);
-    println!("goal: {}", goal_s);
+    println!("goal : {}", goal_s);
     let start = dbnormalize(&start_s.parse().unwrap());
     let goal = dbnormalize(&goal_s.parse().unwrap());
     println!("normalized start: {}", start);
@@ -271,6 +271,9 @@ fn db_prove_equiv_aux(start: RecExpr<DBRise>, goal: RecExpr<DBRise>, rules: Vec<
             }
         }).run(&rules);
     runner.print_report();
+    let rules = runner.iterations.iter().map(|i|
+        i.applied.iter().map(|(_, n)| n).sum::<usize>()).sum::<usize>();
+    println!("applied rules: {}", rules);
     runner.iterations.iter().for_each(|i| println!("{:?}", i));
     runner.egraph.check_goals(id, &goals);
 }
@@ -280,7 +283,11 @@ fn to_db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[
 }
 
 fn to_db_prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite<DBRise, DBRiseAnalysis>>) {
-    db_prove_equiv_aux(to_db(start), to_db(goal), rules)
+    let start_db = to_db(start);
+    let goal_db = to_db(goal);
+    println!("start (db): {}", start_db);
+    println!("goal  (db): {}", goal_db);
+    db_prove_equiv_aux(start_db, goal_db, rules)
 }
 
 fn main() {
@@ -291,12 +298,12 @@ fn main() {
     };
 
     let fission_fusion_rules = &["map-fusion", "map-fission"];
-    let fissioned = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
-        "(app map (var f1))".then("(app map (var f2))").then("(app map (var f3))").then("(app map (var f4))"));
-    let half_fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
-        format!("(app map {})", "(var f1)".then("(var f2)")).then(format!("(app map {})", "(var f3)".then("(var f4)"))));
-    let fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
-        format!("(app map {})", "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)")));
+    let fissioned = format!("(lam f1 (lam f2 (lam f3 (lam f4 (lam f5 {})))))",
+        "(app map (var f1))".then("(app map (var f2))").then("(app map (var f3))").then("(app map (var f4))").then("(app map (var f5))"));
+    let half_fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 (lam f5 {})))))",
+        format!("(app map {})", "(var f1)".then("(var f2)")).then(format!("(app map {})", "(var f3)".then("(var f4)").then("(var f5)"))));
+    let fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 (lam f5 {})))))",
+        format!("(app map {})", "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)").then("(var f5)")));
 
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
@@ -336,19 +343,19 @@ fn main() {
     };
     
     match name {
-        "simple_eta_reduction" =>
+        "simple-eta-reduction" =>
             bench(
                 "(app (lam x (app map (var x))) f)".into(),
                 "(app map f)".into(),
                 &[], false
             ),
-        "lambda_under" =>
+        "lambda-under" =>
             bench(
                 "(lam x (app (app add 4) (app (lam y (var y)) 4)))".into(),
                 "(lam x (app (app add 4) 4))".into(),
                 &[], false
             ),
-        "lambda_compose" =>
+        "lambda-compose" =>
             bench(
                 "(app (lam compose 
                     (app (lam add1 
@@ -359,7 +366,7 @@ fn main() {
                 "(lam x (app (app add (app (app add (var x)) 1)) 1))".into(),
                 &[], false
             ),
-        "lambda_compose_many" =>
+        "lambda-compose-many" =>
             bench(
                 "(app (lam compose 
                     (app (lam add1
@@ -383,22 +390,22 @@ fn main() {
                                                     (var x)) 1)) 1)) 1)) 1)) 1)) 1)) 1))".into(),
                 &[], false
             ),
-        "map fusion" => 
+        "map-fusion" => 
             bench(fissioned, half_fused, fission_fusion_rules, true),
-        "map fission" =>
+        "map-fission" =>
             bench(fused, fissioned, fission_fusion_rules, true),
-        "map fission + map fusion" =>
+        "map-fission-fusion" =>
             bench(fused, half_fused, fission_fusion_rules, true),
-        "base to factorised" =>
+        "base-to-factorised" =>
             bench(base, factorised,
                 &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true),
-        "base to factorised VH" =>
+        "base-to-factorised-VH" =>
             bench(base, factorised_vh,
                 &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true),
-        "scanline to separated" =>
+        "scanline-to-separated" =>
             bench(scanline, separated,
                 &["map-fission", "map-fusion"], true),
-        "base to scanline" =>
+        "base-to-scanline" =>
             bench(base, scanline, scanline_rules, true),
         _ => panic!("did not expect {}", name)
     }
