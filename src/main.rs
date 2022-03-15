@@ -7,6 +7,7 @@ mod dbrules;
 mod dbsubstitute;
 mod scheduler;
 
+use std::env;
 use egg::*;
 use crate::rise::*;
 use crate::dbrise::*;
@@ -129,9 +130,16 @@ fn dbnormalize(e: &DBRiseExpr) -> DBRiseExpr {
     normalized
 }
 
-fn bench_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str], should_normalize: bool) {
+fn bench_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str],
+                     substitution: &str, binding: &str,
+                     should_normalize: bool) {
     println!();
-    println!("---- {} ----", name);
+    println!("-------");
+    println!("- goal:         {}", name);
+    println!("- substitution: {}", substitution);
+    println!("- binding:      {}", binding);
+    println!("-------");
+    println!();
 
     let start_p: RecExpr<Rise> = start_s.parse().unwrap();
     let goal_p: RecExpr<Rise> = goal_s.parse().unwrap();
@@ -139,33 +147,40 @@ fn bench_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[
     let goal = if should_normalize { normalize(&goal_p) } else { goal_p };
     println!("start: {}", start);
     println!("goal: {}", goal);
-/*
-    let ext_rules = rules(
-        &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
-        false);
-    prove_equiv_aux(&format!("ext {}", name), start.clone(), goal.clone(), ext_rules);
 
-    let mut exp_rules = vec!["eta", "beta",
-        "let-app", "let-var-same", "let-var-diff", "let-lam-same", "let-lam-diff", "let-const"
-    ];
-    exp_rules.extend(rule_names);
-    prove_equiv_aux(&format!("exp {}", name), start.clone(), goal.clone(), &exp_rules[..]);
-*/
-
-    println!("db ext {}", name);
-    let db_ext_rules = dbrules(
-        &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
-        false);
-    to_db_prove_equiv_aux(start.clone(), goal.clone(), db_ext_rules);
-
-    println!("db exp {}", name);
-    let db_exp_rules = dbrules(&([
-            "eta", "beta", 
-            "sig-lam", "sig-app", "sig-var-const",
-            "phi-lam", "phi-app", "phi-var-const"
-        ].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
-        true);
-    to_db_prove_equiv_aux(start, goal, db_exp_rules);
+    match (substitution, binding) {
+        ("explicit", "name") =>
+            prove_equiv_aux(start, goal, rules(
+                &([
+                    "eta", "beta",
+                    "let-app", "let-var-same", "let-var-diff",
+                    "let-lam-same", "let-lam-diff", "let-const"
+                ].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
+                true
+            )),
+        ("extraction", "name") =>
+            prove_equiv_aux(start, goal, rules(
+                &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned())
+                .collect::<Vec<_>>()),
+                false
+            )),
+        ("explicit", "DeBruijn") => 
+            to_db_prove_equiv_aux(start, goal, dbrules(
+                &([
+                    "eta", "beta", 
+                    "sig-lam", "sig-app", "sig-var-const",
+                    "phi-lam", "phi-app", "phi-var-const"
+                ].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
+                true
+            )),
+        ("extraction", "DeBruijn") => 
+            to_db_prove_equiv_aux(start.clone(), goal.clone(), dbrules(
+                &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned())
+                .collect::<Vec<_>>()),
+                false
+            )),
+        _ => panic!("did not expect {} and {}", substitution, binding)
+    }
 
     println!();
 }
@@ -269,77 +284,19 @@ fn to_db_prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<R
 }
 
 fn main() {
-    let e =
-        "(app map (app (app padClamp 1) 1))".then(
-        "(app (app padClamp 1) 1)".then(
-        "next"));
-    prove_equiv("trivial", e.clone(), e, &[]);
-
-    bench_prove_equiv("simple_eta_reduction",
-        "(app (lam x (app map (var x))) f)".into(),
-        "(app map f)".into(),
-        &[], false
-    );
-
-    bench_prove_equiv("lambda_under",
-        "(lam x (app (app add 4) (app (lam y (var y)) 4)))".into(),
-        "(lam x (app (app add 4) 4))".into(),
-        &[], false
-    );
-
-    bench_prove_equiv("lambda_compose",
-        "(app (lam compose 
-            (app (lam add1 
-              (app (app (var compose) (var add1)) (var add1))
-            ) (lam y (app (app add (var y)) 1)))
-          ) (lam f (lam g (lam x (app (var f)
-                                 (app (var g) (var x)))))))".into(),
-        "(lam x (app (app add (app (app add (var x)) 1)) 1))".into(),
-        &[], false
-    );
-
-    bench_prove_equiv("lambda_compose_many",
-        "(app (lam compose 
-            (app (lam add1
-                (app (app (var compose) (var add1))
-                    (app (app (var compose) (var add1))
-                        (app (app (var compose) (var add1))
-                            (app (app (var compose) (var add1))
-                                (app (app (var compose) (var add1))
-                                        (app (app (var compose) (var add1))
-                                            (var add1)))))))
-            ) (lam y (app (app add (var y)) 1)))
-          ) (lam f (lam g (lam x (app (var f)
-                                 (app (var g) (var x)))))))".into(),
-        "(lam x (app (app add
-                    (app (app add
-                        (app (app add
-                            (app (app add
-                                (app (app add
-                                    (app (app add
-                                        (app (app add
-                                            (var x)) 1)) 1)) 1)) 1)) 1)) 1)) 1))".into(),
-        &[], false
-    );
+    let args: Vec<String> = env::args().collect();
+    let (name, substitution, binding) = match &args[..] {
+        [_, n, s, b] => (&n as &str, &s as &str, &b as &str),
+        _ => panic!("expected 3 arguments")
+    };
 
     let fission_fusion_rules = &["map-fusion", "map-fission"];
-
     let fissioned = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
         "(app map (var f1))".then("(app map (var f2))").then("(app map (var f3))").then("(app map (var f4))"));
     let half_fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
         format!("(app map {})", "(var f1)".then("(var f2)")).then(format!("(app map {})", "(var f3)".then("(var f4)"))));
     let fused = format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
         format!("(app map {})", "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)")));
-    bench_prove_equiv("map fusion", fissioned.clone(), half_fused.clone(), fission_fusion_rules, true);
-    bench_prove_equiv("map fission", fused.clone(), fissioned, fission_fusion_rules, true);
-    bench_prove_equiv("map fission + map fusion", fused, half_fused, fission_fusion_rules, true);
-
-/*
-    prove_equiv("map first fission (then)",
-                "(app map (>> f1 (>> f2 (>> f3 (>> f4 f5)))))".into(),
-                "(>> (app map f1) (app map (>> f2 (>> f3 (>> f4 f5)))))".into(),
-                &["map-fusion-then", "map-fission-then", "then-assoc-1", "then-assoc-2"]);
-*/
 
     let tmp = "(app map (app (app slide 3) 1))".then("(app (app slide 3) 1)").then("(app map transpose)");
     let slide2d_3_1 = tmp.as_str();
@@ -368,21 +325,96 @@ fn main() {
         format!("(app map {})", "transpose".then(format!("(app map (app {} weightsV))", dot)))).then(
         format!("(app map {})", "(app (app slide 3) 1)".then(format!("(app map (app {} weightsH))", dot2)))
     );
-    
-    bench_prove_equiv("base to factorised", base.clone(), factorised.clone(),
-        &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true);
-    bench_prove_equiv("base to factorised VH", base.clone(), factorised_vh.clone(),
-        &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true);
-
-    bench_prove_equiv("scanline to separated", scanline.clone(), separated.clone(),
-        &["map-fission", "map-fusion"], true);
 
     let scanline_rules = &[
         "remove-transpose-pair", "map-fusion", "map-fission",
         "slide-before-map", "map-slide-before-transpose", "slide-before-map-map-f",
         "separate-dot-vh-simplified", "separate-dot-hv-simplified"];
 
-    bench_prove_equiv("base to scanline", base, scanline, scanline_rules, true);
+    let bench = |start, goal, rules, should_norm| {
+        bench_prove_equiv(name, start, goal, rules, substitution, binding, should_norm);
+    };
+    
+    match name {
+        "simple_eta_reduction" =>
+            bench(
+                "(app (lam x (app map (var x))) f)".into(),
+                "(app map f)".into(),
+                &[], false
+            ),
+        "lambda_under" =>
+            bench(
+                "(lam x (app (app add 4) (app (lam y (var y)) 4)))".into(),
+                "(lam x (app (app add 4) 4))".into(),
+                &[], false
+            ),
+        "lambda_compose" =>
+            bench(
+                "(app (lam compose 
+                    (app (lam add1 
+                      (app (app (var compose) (var add1)) (var add1))
+                    ) (lam y (app (app add (var y)) 1)))
+                  ) (lam f (lam g (lam x (app (var f)
+                                         (app (var g) (var x)))))))".into(),
+                "(lam x (app (app add (app (app add (var x)) 1)) 1))".into(),
+                &[], false
+            ),
+        "lambda_compose_many" =>
+            bench(
+                "(app (lam compose 
+                    (app (lam add1
+                        (app (app (var compose) (var add1))
+                            (app (app (var compose) (var add1))
+                                (app (app (var compose) (var add1))
+                                    (app (app (var compose) (var add1))
+                                        (app (app (var compose) (var add1))
+                                                (app (app (var compose) (var add1))
+                                                    (var add1)))))))
+                    ) (lam y (app (app add (var y)) 1)))
+                  ) (lam f (lam g (lam x (app (var f)
+                                         (app (var g) (var x)))))))".into(),
+                "(lam x (app (app add
+                            (app (app add
+                                (app (app add
+                                    (app (app add
+                                        (app (app add
+                                            (app (app add
+                                                (app (app add
+                                                    (var x)) 1)) 1)) 1)) 1)) 1)) 1)) 1))".into(),
+                &[], false
+            ),
+        "map fusion" => 
+            bench(fissioned, half_fused, fission_fusion_rules, true),
+        "map fission" =>
+            bench(fused, fissioned, fission_fusion_rules, true),
+        "map fission + map fusion" =>
+            bench(fused, half_fused, fission_fusion_rules, true),
+        "base to factorised" =>
+            bench(base, factorised,
+                &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true),
+        "base to factorised VH" =>
+            bench(base, factorised_vh,
+                &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true),
+        "scanline to separated" =>
+            bench(scanline, separated,
+                &["map-fission", "map-fusion"], true),
+        "base to scanline" =>
+            bench(base, scanline, scanline_rules, true),
+        _ => panic!("did not expect {}", name)
+    }
+/*
+    let e =
+        "(app map (app (app padClamp 1) 1))".then(
+        "(app (app padClamp 1) 1)".then(
+        "next"));
+    prove_equiv("trivial", e.clone(), e, &[]);
+
+    prove_equiv("map first fission (then)",
+                "(app map (>> f1 (>> f2 (>> f3 (>> f4 f5)))))".into(),
+                "(>> (app map f1) (app map (>> f2 (>> f3 (>> f4 f5)))))".into(),
+                &["map-fusion-then", "map-fission-then", "then-assoc-1", "then-assoc-2"]);
+*/
+
 /*
     let scanline_s1 = "(app map (app (app slide 3) 1))".then(
         "(app (app slide 3) 1)").then(
