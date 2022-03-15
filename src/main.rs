@@ -224,6 +224,9 @@ fn prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite
             }
         }).run(&rules);
     runner.print_report();
+    let rules = runner.iterations.iter().map(|i|
+        i.applied.iter().map(|(_, n)| n).sum::<usize>()).sum::<usize>();
+    println!("applied rules: {}", rules);
     runner.iterations.iter().for_each(|i| println!("{:?}", i));
     // count_alpha_equiv(&mut runner.egraph);
     // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();

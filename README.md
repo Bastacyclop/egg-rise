@@ -8,4 +8,8 @@
 
 ## Collect Results
 
-`./collect_results.sh`
+`./collect_results.sh > results.csv`
+
+## Preview Results
+
+`cat results.csv | sed -e 's/,,/, ,/g' | column -s, -t | less -#5 -N -S`

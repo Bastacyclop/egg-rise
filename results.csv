@@ -1,0 +1,13 @@
+goal, subs, bind, found, seconds, time, kbytes, rules, e-graph
+base-to-scanline, explicit, DeBruijn, no, , 1:00.03, 2044696, , ''
+base-to-scanline, explicit, name, no, , 2:07.26, 2044600, , ''
+base-to-scanline, extraction, DeBruijn, yes, 0.127568552, 0:00.13, 7872, 4905, '3425 nodes, 1432 classes, 8520 memo'
+base-to-scanline, extraction, name, no, , 0:15.99, 2043880, , ''
+lambda-compose-many, explicit, DeBruijn, yes, 0.111890721, 0:00.15, 27440, 17215, '33112 nodes, 16257 classes, 35455 memo'
+lambda-compose-many, explicit, name, yes, 0.083413038, 0:00.09, 4804, 1422, '2382 nodes, 1128 classes, 3356 memo'
+lambda-compose-many, extraction, DeBruijn, yes, 0.00203579, 0:00.00, 2624, 72, '174 nodes, 117 classes, 297 memo'
+lambda-compose-many, extraction, name, yes, 0.005838276, 0:00.01, 2968, 137, '335 nodes, 227 classes, 489 memo'
+map-fission-fusion, explicit, DeBruijn, yes, 0.058239343000000006, 0:00.06, 8716, 5353, '4167 nodes, 1968 classes, 11278 memo'
+map-fission-fusion, explicit, name, no, , 0:34.17, 2044520, , ''
+map-fission-fusion, extraction, DeBruijn, yes, 0.006947141, 0:00.01, 3164, 584, '565 nodes, 289 classes, 1050 memo'
+map-fission-fusion, extraction, name, yes, 0.006507494000000001, 0:00.01, 3052, 243, '934 nodes, 714 classes, 1000 memo'
