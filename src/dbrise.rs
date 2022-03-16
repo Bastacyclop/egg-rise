@@ -78,6 +78,37 @@ impl Analysis<DBRise> for DBRiseAnalysis {
                         .filter(|&idx| idx != Index(0))
                         .map(|idx| Index(idx.0 - 1)));
             }
+            DBRise::Sigma([i, a, b]) => {
+                let i_num = match egraph[*i].data.beta_extract.as_ref() {
+                    &[DBRise::Number(i_num)] => i_num as u32,
+                    _ => panic!()
+                };
+                let used = egraph[*a].data.free.contains(&Index(i_num));
+                free.extend(
+                    egraph[*a].data.free.iter().cloned()
+                        .filter(|&idx| idx != Index(i_num))
+                        .map(|idx| if idx.0 > i_num { Index(idx.0 - 1) } else { idx }));
+                if used {
+                    free.extend(egraph[*b].data.free.iter().map(|idx| {
+                        Index((idx.0 + i_num))
+                    }));
+                }
+            }
+            DBRise::Phi([i, k, a]) => {
+                let i_num = match egraph[*i].data.beta_extract.as_ref() {
+                    &[DBRise::Number(i_num)] => i_num,
+                    _ => panic!()
+                };
+                let k_num = match egraph[*k].data.beta_extract.as_ref() {
+                    &[DBRise::Number(k_num)] => k_num,
+                    _ => panic!()
+                };
+                free.extend(
+                    egraph[*a].data.free.iter().cloned().map(|idx| {
+                        let n = idx.0 as i32;
+                        if n >= k_num { Index((n + i_num) as u32) } else { idx }
+                    }));
+            }
             _ => {
                 enode.for_each(|c| free.extend(&egraph[c].data.free));
             }

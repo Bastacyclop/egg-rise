@@ -60,8 +60,9 @@ impl Analysis<Rise> for RiseAnalysis {
             }
             Rise::Let([v, a, b]) => {
                 extend(&mut free, b);
-                free.remove(v);
-                extend(&mut free, a);
+                if free.remove(v) {
+                    extend(&mut free, a);
+                }
             }
             _ => {
                 enode.for_each(|c| extend(&mut free, &c));
