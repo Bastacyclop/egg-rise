@@ -1,6 +1,6 @@
 use egg::*;
 use std::collections::HashSet;
-use std::cmp::Ordering;
+use egg::Language;
 
 define_language! {
     pub enum Rise {
@@ -32,7 +32,7 @@ pub struct Data {
 impl Analysis<Rise> for RiseAnalysis {
     type Data = Data;
 
-    fn merge(&self, to: &mut Data, from: Data) -> Option<Ordering> {
+    fn merge(&mut self, to: &mut Data, from: Data) -> DidMerge {
         let before_len = to.free.len();
         to.free.extend(from.free);
         let mut did_change = before_len != to.free.len();
@@ -42,7 +42,7 @@ impl Analysis<Rise> for RiseAnalysis {
             to.beta_extract = from.beta_extract;
             did_change = true;
         }
-        if did_change { None } else { Some(Ordering::Greater) }
+        DidMerge(did_change, true)
     }
 
     fn make(egraph: &RiseEGraph, enode: &Rise) -> Data {
@@ -74,7 +74,7 @@ impl Analysis<Rise> for RiseAnalysis {
         let beta_extract = if empty {
             vec![].into()
         } else {
-            enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref())
+            enode.join_recexprs(|id| egraph[id].data.beta_extract.as_ref())
         };
         Data { free, beta_extract }
     }

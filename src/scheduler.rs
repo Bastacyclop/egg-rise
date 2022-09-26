@@ -87,13 +87,13 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
         }
     }
 
-    fn search_rewrite(
+    fn search_rewrite<'a>(
         &mut self,
         iteration: usize,
         egraph: &EGraph<L, N>,
-        rewrite: &Rewrite<L, N>,
-    ) -> Vec<SearchMatches> {
-        if let Some(limit) = self.stats.get_mut(rewrite.name()) {
+        rewrite: &'a Rewrite<L, N>,
+    ) -> Vec<SearchMatches<'a, L>> {
+        if let Some(limit) = self.stats.get_mut(rewrite.name.as_str().into()) {
             if iteration < limit.banned_until {
                 /*debug!(
                     "Skipping {} ({}-{}), banned until {}...",
@@ -126,7 +126,7 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
             }
         } else {
             self.stats.insert(
-                rewrite.name().into(),
+                rewrite.name.as_str().into(),
                 RuleStats {
                     times_applied: 0,
                     banned_until: 0,

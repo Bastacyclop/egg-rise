@@ -1,6 +1,5 @@
 use egg::*;
 use std::collections::HashSet;
-use std::cmp::Ordering;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy)]
 pub struct Index(pub u32);
@@ -53,7 +52,7 @@ pub struct DBData {
 impl Analysis<DBRise> for DBRiseAnalysis {
     type Data = DBData;
 
-    fn merge(&self, to: &mut DBData, from: DBData) -> Option<Ordering> {
+    fn merge(&mut self, to: &mut DBData, from: DBData) -> DidMerge {
         let before_len = to.free.len();
         to.free.extend(from.free);
         let mut did_change = before_len != to.free.len();
@@ -63,7 +62,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
             to.beta_extract = from.beta_extract;
             did_change = true;
         }
-        if did_change { None } else { Some(Ordering::Greater) }
+        DidMerge(did_change, true)
     }
 
     fn make(egraph: &DBRiseEGraph, enode: &DBRise) -> DBData {
@@ -90,7 +89,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
                         .map(|idx| if idx.0 > i_num { Index(idx.0 - 1) } else { idx }));
                 if used {
                     free.extend(egraph[*b].data.free.iter().map(|idx| {
-                        Index((idx.0 + i_num))
+                        Index(idx.0 + i_num)
                     }));
                 }
             }
@@ -119,7 +118,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
         let beta_extract = if empty {
             vec![].into()
         } else {
-            enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref())
+            enode.join_recexprs(|id| egraph[id].data.beta_extract.as_ref())
         };
         DBData { free, beta_extract }
     }

@@ -96,6 +96,8 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
 
 // returns a new body where var becomes expr
 pub fn substitute_eclass(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -> Id {
+    unimplemented!() // needs update
+/*
     struct Env<'a> {
         egraph: &'a mut RiseEGraph,
         var: Id,
@@ -112,7 +114,8 @@ pub fn substitute_eclass(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -
                 } else {
                     let enodes = env.egraph[eclass].nodes.clone();
                     // add a dummy node to avoid cycles
-                    let dummy = env.egraph.reserve();
+                    // TODO:
+                    // let dummy = env.egraph.reserve();
                     // env.egraph.add(Rise::Symbol(format!("_s_{}_{}_{}", eclass, env.var, env.expr).into()));
                     env.visited.insert(eclass, dummy);
                     let final_id = enodes.into_iter().fold(dummy, |current_id, enode| {
@@ -164,8 +167,10 @@ pub fn substitute_eclass(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -
     // egraph.rebuild();
     // egraph.dot().to_svg(format!("/tmp/after_{}_{}_{}.svg", var, expr, body)).unwrap();
     r
+*/
 }
 
+/*
 // returns a new body where var is replaced by expr
 fn replace_eclass(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id {
     struct Env<'a> {
@@ -202,3 +207,4 @@ fn replace_eclass(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id
     let visited = HashMap::new();
     rec_class(body, &mut Env { egraph, var, new_var, visited })
 }
+*/

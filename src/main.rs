@@ -399,6 +399,14 @@ fn main() {
             bench(fused, fissioned, fission_fusion_rules, true),
         "map-fission-fusion" =>
             bench(fused, half_fused, fission_fusion_rules, true),
+        "map-fission-fusion-4" =>
+            bench(
+                format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))", format!("(app map {})",
+                    "(var f1)".then("(var f2)").then("(var f3)").then("(var f4)"))),
+                format!("(lam f1 (lam f2 (lam f3 (lam f4 {}))))",
+                    format!("(app map {})", "(var f1)".then("(var f2)")).then(
+                        format!("(app map {})", "(var f3)".then("(var f4)")))),
+                fission_fusion_rules, true),
         "base-to-factorised" =>
             bench(base, factorised,
                 &["separate-dot-vh-simplified", "separate-dot-hv-simplified"], true),

@@ -117,13 +117,13 @@ pub fn dbrules(names: &[&str], use_explicit_subs: bool) -> Vec<Rewrite<DBRise, D
         rewrite!("phi-var-const"; "(phi ?i ?k ?n)" =>
             { PhiVarConstApplier { i: var("?i"), k: var("?k"), n: var("?n") }}),
     ];
-    let mut map: HashMap<String, _> = common.into_iter().map(|r| (r.name().to_owned(), r)).collect();
+    let mut map: HashMap<Symbol, _> = common.into_iter().map(|r| (r.name.to_owned(), r)).collect();
     if use_explicit_subs {
-        map.extend(explicit_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+        map.extend(explicit_substitution.into_iter().map(|r| (r.name.to_owned(), r)));
     } else {
-        map.extend(extraction_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+        map.extend(extraction_substitution.into_iter().map(|r| (r.name.to_owned(), r)));
     }
-    names.into_iter().map(|&n| map.remove(n).expect("rule not found")).collect()
+    names.into_iter().map(|&n| map.remove(&(n.into())).expect("rule not found")).collect()
 }
 
 struct BetaExtractApplier {
@@ -132,7 +132,8 @@ struct BetaExtractApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for BetaExtractApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst, 
+                 searcher_ast: Option<&PatternAst<DBRise>>, rule_name: Symbol) -> Vec<Id> {
         let ex_body = &egraph[subst[self.body]].data.beta_extract;
         let ex_subs = &egraph[subst[self.subs]].data.beta_extract;
         let result = beta_reduce(ex_body, ex_subs);
@@ -171,12 +172,13 @@ struct Shifted<A> {
 }
 
 impl<A> Applier<DBRise, DBRiseAnalysis> for Shifted<A> where A: Applier<DBRise, DBRiseAnalysis> {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst,
+                 searcher_ast: Option<&PatternAst<DBRise>>, rule_name: Symbol) -> Vec<Id> {
         let extract = &egraph[subst[self.var]].data.beta_extract;
         let shifted = shift_copy(extract, self.up, self.cutoff);
         let mut subst = subst.clone();
         subst.insert(self.new_var, egraph.add_expr(&shifted));
-        self.applier.apply_one(egraph, eclass, &subst)
+        self.applier.apply_one(egraph, eclass, &subst, searcher_ast, rule_name)
     }
 }
 
@@ -188,7 +190,8 @@ struct NumberShiftApplier<A> {
 }
 
 impl<A> Applier<DBRise, DBRiseAnalysis> for NumberShiftApplier<A> where A: Applier<DBRise, DBRiseAnalysis> {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst, 
+                 searcher_ast: Option<&PatternAst<DBRise>>, rule_name: Symbol) -> Vec<Id> {
         let extract = &egraph[subst[self.var]].data.beta_extract;
         let shifted = match extract.as_ref() {
             [DBRise::Number(i)] => DBRise::Number(i + self.shift),
@@ -196,7 +199,7 @@ impl<A> Applier<DBRise, DBRiseAnalysis> for NumberShiftApplier<A> where A: Appli
         };
         let mut subst = subst.clone();
         subst.insert(self.new_var, egraph.add(shifted));
-        self.applier.apply_one(egraph, eclass, &subst)
+        self.applier.apply_one(egraph, eclass, &subst, searcher_ast, rule_name)
     }
 }
 
@@ -207,7 +210,8 @@ struct SigVarConstApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for SigVarConstApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst, 
+                 searcher_ast: Option<&PatternAst<DBRise>>, rule_name: Symbol) -> Vec<Id> {
         match egraph[subst[self.n]].data.beta_extract.as_ref() {
             [DBRise::Number(_)] => vec![subst[self.n]],
             [DBRise::Symbol(_)] => vec![subst[self.n]],
@@ -238,7 +242,8 @@ struct PhiVarConstApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for PhiVarConstApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst, 
+                 searcher_ast: Option<&PatternAst<DBRise>>, rule_name: Symbol) -> Vec<Id> {
         match egraph[subst[self.n]].data.beta_extract.as_ref() {
             [DBRise::Number(_)] => vec![subst[self.n]],
             [DBRise::Symbol(_)] => vec![subst[self.n]],
