@@ -94,8 +94,11 @@ pub fn substitute_expr(var: Symbol, expr: &RecExpr<Rise>, body: &RecExpr<Rise>) 
     result
 }
 
+
 // returns a new body where var becomes expr
 pub fn substitute_eclass(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -> Id {
+    unimplemented!();
+/* DEPRECATED CODE
     struct Env<'a> {
         egraph: &'a mut RiseEGraph,
         var: Id,
@@ -164,7 +167,10 @@ pub fn substitute_eclass(egraph: &mut RiseEGraph, var: Id, expr: Id, body: Id) -
     // egraph.rebuild();
     // egraph.dot().to_svg(format!("/tmp/after_{}_{}_{}.svg", var, expr, body)).unwrap();
     r
+    */
 }
+
+/* DEPRECATED CODE
 
 // returns a new body where var is replaced by expr
 fn replace_eclass(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id {
@@ -202,3 +208,5 @@ fn replace_eclass(egraph: &mut RiseEGraph, var: Id, new_var: Id, body: Id) -> Id
     let visited = HashMap::new();
     rec_class(body, &mut Env { egraph, var, new_var, visited })
 }
+
+*/

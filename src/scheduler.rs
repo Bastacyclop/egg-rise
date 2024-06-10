@@ -4,7 +4,7 @@ use std::collections::HashMap;
 pub struct Scheduler {
     match_limit: usize,
     ban_length: usize,
-    stats: HashMap<String, RuleStats>,
+    stats: HashMap<Symbol, RuleStats>,
 }
 
 struct RuleStats {
@@ -87,17 +87,17 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
         }
     }
 
-    fn search_rewrite(
+    fn search_rewrite<'a>(
         &mut self,
         iteration: usize,
         egraph: &EGraph<L, N>,
-        rewrite: &Rewrite<L, N>,
-    ) -> Vec<SearchMatches> {
-        if let Some(limit) = self.stats.get_mut(rewrite.name()) {
+        rewrite: &'a Rewrite<L, N>,
+    ) -> Vec<SearchMatches<'a, L>> {
+        if let Some(limit) = self.stats.get_mut(&rewrite.name) {
             if iteration < limit.banned_until {
                 /*debug!(
                     "Skipping {} ({}-{}), banned until {}...",
-                    rewrite.name(),
+                    rewrite.name,
                     limit.times_applied,
                     limit.times_banned,
                     limit.banned_until,
@@ -112,7 +112,7 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
                 limit.banned_until = iteration + self.ban_length;
                 /*info!(
                     "Banning {} ({}-{}) for {} iters: {} < {}",
-                    rewrite.name(),
+                    rewrite.name,
                     limit.times_applied,
                     limit.times_banned,
                     ban_length,
@@ -126,7 +126,7 @@ impl<L, N> RewriteScheduler<L, N> for Scheduler
             }
         } else {
             self.stats.insert(
-                rewrite.name().into(),
+                rewrite.name,
                 RuleStats {
                     times_applied: 0,
                     banned_until: 0,

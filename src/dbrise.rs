@@ -53,7 +53,7 @@ pub struct DBData {
 impl Analysis<DBRise> for DBRiseAnalysis {
     type Data = DBData;
 
-    fn merge(&self, to: &mut DBData, from: DBData) -> Option<Ordering> {
+    fn merge(&mut self, to: &mut DBData, from: DBData) -> DidMerge {
         let before_len = to.free.len();
         to.free.extend(from.free);
         let mut did_change = before_len != to.free.len();
@@ -63,7 +63,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
             to.beta_extract = from.beta_extract;
             did_change = true;
         }
-        if did_change { None } else { Some(Ordering::Greater) }
+        DidMerge(did_change, true) // TODO: more precise second bool
     }
 
     fn make(egraph: &DBRiseEGraph, enode: &DBRise) -> DBData {
@@ -119,7 +119,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
         let beta_extract = if empty {
             vec![].into()
         } else {
-            enode.to_recexpr(|id| egraph[id].data.beta_extract.as_ref())
+            enode.join_recexprs(|id| egraph[id].data.beta_extract.as_ref())
         };
         DBData { free, beta_extract }
     }

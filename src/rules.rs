@@ -128,13 +128,13 @@ pub fn rules(names: &[&str], use_explicit_subs: bool) -> Vec<Rewrite<Rise, RiseA
             if is_not_same_var(var("?v1"), var("?v2"))),
         rewrite!("let-const"; "(let ?v ?e ?c)" => "?c" if is_const(var("?c"))),
     ];
-    let mut map: HashMap<String, _> = common.into_iter().map(|r| (r.name().to_owned(), r)).collect();
+    let mut map: HashMap<Symbol, _> = common.into_iter().map(|r| (r.name.to_owned(), r)).collect();
     if use_explicit_subs {
-        map.extend(explicit_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+        map.extend(explicit_substitution.into_iter().map(|r| (r.name.to_owned(), r)));
     } else {
-        map.extend(extraction_substitution.into_iter().map(|r| (r.name().to_owned(), r)));
+        map.extend(extraction_substitution.into_iter().map(|r| (r.name.to_owned(), r)));
     }
-    names.into_iter().map(|&n| map.remove(n).expect("rule not found")).collect()
+    names.into_iter().map(|&n| map.remove(&Symbol::new(n)).expect("rule not found")).collect()
 }
 
 struct BetaApplier {
@@ -144,7 +144,8 @@ struct BetaApplier {
 }
 
 impl Applier<Rise, RiseAnalysis> for BetaApplier {
-    fn apply_one(&self, egraph: &mut RiseEGraph, _eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut RiseEGraph, _eclass: Id, subst: &Subst,
+                 _searcher_ast: Option<&PatternAst<Rise>>, rule_name: Symbol) -> Vec<Id> {
         let new_id = substitute_eclass(
             egraph, subst[self.v], subst[self.e], subst[self.body]);
         vec![new_id]
@@ -158,7 +159,8 @@ struct BetaExtractApplier {
 }
 
 impl Applier<Rise, RiseAnalysis> for BetaExtractApplier {
-    fn apply_one(&self, egraph: &mut RiseEGraph, _eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut RiseEGraph, _eclass: Id, subst: &Subst,
+                 _searcher_ast: Option<&PatternAst<Rise>>, rule_name: Symbol) -> Vec<Id> {
         let ex_body = &egraph[subst[self.body]].data.beta_extract;
         let ex_e = &egraph[subst[self.e]].data.beta_extract;
         let v_sym = {
@@ -191,11 +193,12 @@ struct MakeFresh {
 }
 
 impl Applier<Rise, RiseAnalysis> for MakeFresh {
-    fn apply_one(&self, egraph: &mut RiseEGraph, eclass: Id, subst: &Subst) -> Vec<Id> {
+    fn apply_one(&self, egraph: &mut RiseEGraph, eclass: Id, subst: &Subst,
+                 searcher_ast: Option<&PatternAst<Rise>>, rule_name: Symbol) -> Vec<Id> {
         let sym = Rise::Symbol(format!("{}{}", self.prefix, eclass).into());
         let mut subst = subst.clone();
         subst.insert(self.fresh, egraph.add(sym));
-        self.pattern.apply_one(egraph, eclass, &subst)
+        self.pattern.apply_one(egraph, eclass, &subst, searcher_ast, rule_name)
     }
 }
 
@@ -213,6 +216,8 @@ impl Applier<Rise, RiseAnalysis> for CaptureAvoid {
         egraph: &mut RiseEGraph,
         eclass: Id,
         subst: &Subst,
+        searcher_ast: Option<&PatternAst<Rise>>,
+        rule_name: Symbol
     ) -> Vec<Id> {
         let e = subst[self.e];
         let v2 = subst[self.v2];
@@ -222,10 +227,10 @@ impl Applier<Rise, RiseAnalysis> for CaptureAvoid {
             let sym = Rise::Symbol(format!("_{}", eclass).into());
             subst.insert(self.fresh, egraph.add(sym));
             self.if_free
-                .apply_one(egraph, eclass, &subst)
+                .apply_one(egraph, eclass, &subst, searcher_ast, rule_name)
         } else {
             self.if_not_free
-                .apply_one(egraph, eclass, &subst)
+                .apply_one(egraph, eclass, &subst, searcher_ast, rule_name)
         }
     }
 }
