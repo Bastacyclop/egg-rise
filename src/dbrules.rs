@@ -132,12 +132,14 @@ struct BetaExtractApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for BetaExtractApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst,
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst,
                  _searcher_ast: Option<&PatternAst<DBRise>>, _rule_name: Symbol) -> Vec<Id> {
         let ex_body = &egraph[subst[self.body]].data.beta_extract;
         let ex_subs = &egraph[subst[self.subs]].data.beta_extract;
         let result = beta_reduce(ex_body, ex_subs);
-        vec![egraph.add_expr(&result)]
+        let id = egraph.add_expr(&result);
+        egraph.union(eclass, id);
+        vec![id]
     }
 }
 
@@ -210,11 +212,14 @@ struct SigVarConstApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for SigVarConstApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst,
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst,
                  _searcher_ast: Option<&PatternAst<DBRise>>, _rule_name: Symbol) -> Vec<Id> {
         match egraph[subst[self.n]].data.beta_extract.as_ref() {
-            [DBRise::Number(_)] => vec![subst[self.n]],
-            [DBRise::Symbol(_)] => vec![subst[self.n]],
+            [DBRise::Number(_)] | [DBRise::Symbol(_)] => {
+                let id = subst[self.n];
+                egraph.union(eclass, id);
+                vec![id]
+            }
             &[DBRise::Var(Index(var))] => {
                 let i_num = match egraph[subst[self.i]].data.beta_extract.as_ref() {
                     &[DBRise::Number(i_num)] => i_num,
@@ -228,7 +233,9 @@ impl Applier<DBRise, DBRiseAnalysis> for SigVarConstApplier {
                 } else { // n < i_num
                     DBRise::Var(Index(var))
                 };
-                vec![egraph.add(node)]
+                let id = egraph.add(node);
+                egraph.union(eclass, id);
+                vec![id]
             }
             _ => vec![] // do nothing
         }
@@ -242,11 +249,14 @@ struct PhiVarConstApplier {
 }
 
 impl Applier<DBRise, DBRiseAnalysis> for PhiVarConstApplier {
-    fn apply_one(&self, egraph: &mut DBRiseEGraph, _eclass: Id, subst: &Subst,
+    fn apply_one(&self, egraph: &mut DBRiseEGraph, eclass: Id, subst: &Subst,
                  _searcher_ast: Option<&PatternAst<DBRise>>, _rule_name: Symbol) -> Vec<Id> {
         match egraph[subst[self.n]].data.beta_extract.as_ref() {
-            [DBRise::Number(_)] => vec![subst[self.n]],
-            [DBRise::Symbol(_)] => vec![subst[self.n]],
+            [DBRise::Number(_)] | [DBRise::Symbol(_)] => {
+                let id = subst[self.n];
+                egraph.union(eclass, id);
+                vec![id]
+            }
             &[DBRise::Var(Index(var))] => {
                 let i_num = match egraph[subst[self.i]].data.beta_extract.as_ref() {
                     &[DBRise::Number(i_num)] => i_num,
@@ -258,7 +268,9 @@ impl Applier<DBRise, DBRiseAnalysis> for PhiVarConstApplier {
                 };
                 let n = var as i32;
                 let shifted = DBRise::Var(Index(if n >= k_num { (n + i_num) as u32 } else { var }));
-                vec![egraph.add(shifted)]
+                let id = egraph.add(shifted);
+                egraph.union(eclass, id);
+                vec![id]
             }
             _ => vec![] // do nothing
         }
