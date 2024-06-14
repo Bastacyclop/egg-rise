@@ -2,6 +2,12 @@ use egg::*;
 use std::collections::HashMap;
 use crate::analysis::*;
 
+pub fn count_programs_up_to_size<L: Language, A: Analysis<L>>(egraph: &EGraph<L, A>, eclass: Id, limit: u32) -> HashMap<u32, u64> {
+  let mut data = HashMap::new();
+  one_shot_analysis_semigroup(egraph, CountProgramsUpToSize { limit }, &mut data);
+  data.remove(&eclass).unwrap()
+}
+
 struct CountProgramsUpToSize { limit: u32 }
 
 impl<L: Language, A: Analysis<L>> CommutativeSemigroupAnalysis<L, A> for CountProgramsUpToSize {
