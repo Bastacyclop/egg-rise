@@ -176,7 +176,7 @@ impl Applier<Rise, RiseAnalysis> for BetaExtractApplier {
         };
         let result = substitute_expr(v_sym, ex_e, ex_body);
         let id = egraph.add_expr(&result);
-        egraph.union(eclass, id)
+        egraph.union(eclass, id);
         vec![id]
     }
 }

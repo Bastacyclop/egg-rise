@@ -6,6 +6,8 @@ mod dbrise;
 mod dbrules;
 mod dbsubstitute;
 mod scheduler;
+mod analysis;
+mod count;
 
 use std::env;
 use egg::*;
@@ -164,16 +166,16 @@ fn bench_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[
                 .collect::<Vec<_>>()),
                 false
             )),
-        ("explicit", "DeBruijn") => 
+        ("explicit", "DeBruijn") =>
             to_db_prove_equiv_aux(start, goal, dbrules(
                 &([
-                    "eta", "beta", 
+                    "eta", "beta",
                     "sig-lam", "sig-app", "sig-var-const",
                     "phi-lam", "phi-app", "phi-var-const"
                 ].iter().cloned().chain(rule_names.iter().cloned()).collect::<Vec<_>>()),
                 true
             )),
-        ("extraction", "DeBruijn") => 
+        ("extraction", "DeBruijn") =>
             to_db_prove_equiv_aux(start.clone(), goal.clone(), dbrules(
                 &(["eta", "beta"].iter().cloned().chain(rule_names.iter().cloned())
                 .collect::<Vec<_>>()),
@@ -202,7 +204,7 @@ fn prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite
     let goals: Vec<Pattern<Rise>> = vec![goal];
     let mut runner = Runner::default()
         .with_expr(&start);
-    
+
     // NOTE this is a bit of hack, we rely on the fact that the
     // initial root is the last expr added by the runner. We can't
     // use egraph.find_expr(start) because it may have been pruned
@@ -344,7 +346,7 @@ fn main() {
     let bench = |start, goal, rules, should_norm| {
         bench_prove_equiv(name, start, goal, rules, substitution, binding, should_norm);
     };
-    
+
     match name {
         "simple-eta-reduction" =>
             bench(
@@ -360,8 +362,8 @@ fn main() {
             ),
         "lambda-compose" =>
             bench(
-                "(app (lam compose 
-                    (app (lam add1 
+                "(app (lam compose
+                    (app (lam add1
                       (app (app (var compose) (var add1)) (var add1))
                     ) (lam y (app (app add (var y)) 1)))
                   ) (lam f (lam g (lam x (app (var f)
@@ -371,7 +373,7 @@ fn main() {
             ),
         "lambda-compose-many" =>
             bench(
-                "(app (lam compose 
+                "(app (lam compose
                     (app (lam add1
                         (app (app (var compose) (var add1))
                             (app (app (var compose) (var add1))
@@ -393,7 +395,7 @@ fn main() {
                                                     (var x)) 1)) 1)) 1)) 1)) 1)) 1)) 1))".into(),
                 &[], false
             ),
-        "map-fusion" => 
+        "map-fusion" =>
             bench(fissioned, half_fused, fission_fusion_rules, true),
         "map-fission" =>
             bench(fused, fissioned, fission_fusion_rules, true),
@@ -523,13 +525,13 @@ fn main() {
     prove_equiv("reorder 4D 2134", reorder4D_base.into(), reorder4D_2134.into(), reorder_rules);
     // FIXME: TimeOut
     // prove_equiv("reorder 4D 4321", reorder4D_base.into(), reorder4D_4321.into(), reorder_rules);
- 
+
     let tiling_rules = &[
         "then-assoc-1", "then-assoc-2",
         "split-join-then",
         "map-fusion-then", "map-fission-then",
         "transpose-pair-after-then", "map-map-f-before-transpose-then"];
-   
+
     let tiling2D_1 = "(lam f (>> split (>> (app map (app map (app map (var f)))) join)))";
     let tiling2D_2 = "(lam f (app map (>> split (>> (app map (app map (var f))) join))))";
     let tiling2D_3 = "(lam f (>> split (>> (app map (app map split)) (>> (app map transpose) (>> (app map (app map (app map (app map (var f))))) (>> (app map transpose) (>> (app map (app map join)) join)))))))";
