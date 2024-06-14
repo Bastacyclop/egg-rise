@@ -160,7 +160,7 @@ struct BetaExtractApplier {
 }
 
 impl Applier<Rise, RiseAnalysis> for BetaExtractApplier {
-    fn apply_one(&self, egraph: &mut RiseEGraph, _eclass: Id, subst: &Subst,
+    fn apply_one(&self, egraph: &mut RiseEGraph, eclass: Id, subst: &Subst,
                  _searcher_ast: Option<&PatternAst<Rise>>, rule_name: Symbol) -> Vec<Id> {
         let ex_body = &egraph[subst[self.body]].data.beta_extract;
         let ex_e = &egraph[subst[self.e]].data.beta_extract;
@@ -176,6 +176,7 @@ impl Applier<Rise, RiseAnalysis> for BetaExtractApplier {
         };
         let result = substitute_expr(v_sym, ex_e, ex_body);
         let id = egraph.add_expr(&result);
+        egraph.union(eclass, id)
         vec![id]
     }
 }
