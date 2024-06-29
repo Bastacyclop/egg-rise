@@ -8,6 +8,7 @@ mod dbsubstitute;
 mod scheduler;
 mod analysis;
 mod count;
+mod stats;
 
 use std::env;
 use egg::*;
@@ -18,6 +19,7 @@ use crate::dbrules::*;
 // use crate::scheduler::*;
 use crate::alpha_equiv::*;
 use crate::dbrise::DBRiseExpr;
+use std::collections::HashMap;
 
 static mut COUNTER: u32 = 0;
 pub fn fresh_id() -> u32 {
@@ -199,40 +201,27 @@ fn prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str])
     prove_equiv_aux(start, goal, rules(rule_names, false));
 }
 
-fn prove_equiv_aux(start: RecExpr<Rise>, goal: RecExpr<Rise>, rules: Vec<Rewrite<Rise, RiseAnalysis>>) {
+fn prove_equiv_aux(
+    start: RecExpr<Rise>,
+    goal: RecExpr<Rise>,
+    rules: Vec<Rewrite<Rise, RiseAnalysis>>
+) {
     let goal = expr_to_alpha_equiv_pattern(goal);
     let goals: Vec<Pattern<Rise>> = vec![goal];
-    let mut runner = Runner::default()
-        .with_expr(&start);
 
-    // NOTE this is a bit of hack, we rely on the fact that the
-    // initial root is the last expr added by the runner. We can't
-    // use egraph.find_expr(start) because it may have been pruned
-    // away
-    let id = runner.egraph.find(*runner.roots.last().unwrap());
+    let mut egraph = EGraph::default();
+    let id = egraph.add_expr(&start);
+    egraph.rebuild();
+
+    let mut ast_size = HashMap::new();
+    analysis::one_shot_analysis(&egraph, AstSize, &mut ast_size);
+    let size_limit = ((ast_size[&id] as u32) * 3) / 2;
 
     let goals2 = goals.clone();
-    runner = runner
-        .with_scheduler(SimpleScheduler)
-        //.with_scheduler(Scheduler::default())
-        .with_node_limit(10_000_000)
-        .with_iter_limit(50)
-        .with_time_limit(std::time::Duration::from_secs(240)) // 4mn
-        .with_hook(move |r| {
-            if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
-                Err("Done".into())
-            } else {
-                Ok(())
-            }
-        }).run(&rules);
-    runner.print_report();
-    let rules = runner.iterations.iter().map(|i|
-        i.applied.iter().map(|(_, n)| n).sum::<usize>()).sum::<usize>();
-    println!("applied rules: {}", rules);
-    runner.iterations.iter().for_each(|i| println!("{:?}", i));
-    // count_alpha_equiv(&mut runner.egraph);
-    // runner.egraph.dot().to_svg(format!("/tmp/{}.svg", name)).unwrap();
-    runner.egraph.check_goals(id, &goals);
+    let egraph = stats::grow_egraph_until("", egraph, &rules, id, size_limit, move |r| {
+        goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some())
+    });
+    egraph.check_goals(id, &goals);
 }
 
 fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str]) {
@@ -251,36 +240,19 @@ fn db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&st
 
 fn db_prove_equiv_aux(start: RecExpr<DBRise>, goal: RecExpr<DBRise>, rules: Vec<Rewrite<DBRise, DBRiseAnalysis>>) {
     let goals: Vec<Pattern<DBRise>> = vec![goal.as_ref().into()];
-    let mut runner = Runner::default()
-        .with_expr(&start);
+    let mut egraph = EGraph::default();
+    let id = egraph.add_expr(&start);
+    egraph.rebuild();
 
-    // NOTE this is a bit of hack, we rely on the fact that the
-    // initial root is the last expr added by the runner. We can't
-    // use egraph.find_expr(start) because it may have been pruned
-    // away
-    let id = runner.egraph.find(*runner.roots.last().unwrap());
+    let mut ast_size = HashMap::new();
+    analysis::one_shot_analysis(&egraph, AstSize, &mut ast_size);
+    let size_limit = ((ast_size[&id] as u32) * 3) / 2;
 
     let goals2 = goals.clone();
-    runner = runner
-        .with_scheduler(SimpleScheduler)
-        //.with_scheduler(Scheduler::default())
-        .with_node_limit(10_000_000)
-        .with_iter_limit(50)
-        .with_time_limit(std::time::Duration::from_secs(240)) // 4mn
-        .with_hook(move |r| {
-            //r.egraph.dot().to_svg(format!("/tmp/egg{}.svg", r.iterations.len())).unwrap();
-            if goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some()) {
-                Err("Done".into())
-            } else {
-                Ok(())
-            }
-        }).run(&rules);
-    runner.print_report();
-    let rules = runner.iterations.iter().map(|i|
-        i.applied.iter().map(|(_, n)| n).sum::<usize>()).sum::<usize>();
-    println!("applied rules: {}", rules);
-    runner.iterations.iter().for_each(|i| println!("{:?}", i));
-    runner.egraph.check_goals(id, &goals);
+    let egraph = stats::grow_egraph_until("", egraph, &rules, id, size_limit, move |r| {
+        goals2.iter().all(|g| g.search_eclass(&r.egraph, id).is_some())
+    });
+    egraph.check_goals(id, &goals);
 }
 
 fn to_db_prove_equiv(name: &str, start_s: String, goal_s: String, rule_names: &[&str]) {

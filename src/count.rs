@@ -9,6 +9,10 @@ pub fn count_programs_up_to_size<L: Language, A: Analysis<L>>(egraph: &EGraph<L,
   data.remove(&egraph.find(eclass)).unwrap()
 }
 
+pub fn sum_programs_up_to_size(m: &HashMap<u32, u64>) -> u64 {
+  m.iter().map(|(_, c)| c).sum()
+}
+
 struct CountProgramsUpToSize { limit: u32 }
 
 impl<L: Language, A: Analysis<L>> CommutativeSemigroupAnalysis<L, A> for CountProgramsUpToSize {

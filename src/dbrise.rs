@@ -90,7 +90,7 @@ impl Analysis<DBRise> for DBRiseAnalysis {
                         .map(|idx| if idx.0 > i_num { Index(idx.0 - 1) } else { idx }));
                 if used {
                     free.extend(egraph[*b].data.free.iter().map(|idx| {
-                        Index((idx.0 + i_num))
+                        Index(idx.0 + i_num)
                     }));
                 }
             }
